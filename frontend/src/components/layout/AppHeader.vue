@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { useDemoStore } from '../../stores/demo'
 import { useOverlay } from '../../composables/useOverlay'
 const store = useDemoStore(), router = useRouter(), ui = useOverlay(), query = ref('')
-function search() { if (!query.value.trim()) return; Object.assign(store.state.search, { scope: 'all', topK: 5, threshold: .08 }); store.search(query.value); void router.push('/search') }
+function search() { if (!query.value.trim()) return; void router.push({path:'/search',query:{q:query.value.trim(),run:String(Date.now())}}) }
 </script>
 <template>
 <header class="topbar">

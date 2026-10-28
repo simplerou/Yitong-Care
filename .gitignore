@@ -28,3 +28,5 @@ playwright-report/
 test-results/
 coverage/
 *.log
+# Original uploads and local runtime files
+backend/var/

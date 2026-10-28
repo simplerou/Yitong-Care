@@ -1,6 +1,6 @@
 import { shallowRef } from 'vue'
 import type { Chunk, KnowledgeDocument } from '../types/models'
-export interface Overlay { kind: 'chunk' | 'preview' | 'document' | 'confirm' | 'human' | 'help' | 'notice'; title: string; subtitle?: string; chunk?: Chunk; chunks?: Chunk[]; query?: string; doc?: KnowledgeDocument; index?: number; desc?: string; okText?: string; onOk?: () => void }
+export interface Overlay { kind: 'chunk' | 'preview' | 'document' | 'confirm' | 'human' | 'help' | 'notice'; title: string; subtitle?: string; chunk?: Chunk; chunks?: Chunk[]; documents?: KnowledgeDocument[]; query?: string; doc?: KnowledgeDocument; index?: number; desc?: string; okText?: string; onOk?: () => void }
 const overlay = shallowRef<Overlay | null>(null)
 export function useOverlay() {
   function open(value: Overlay) { overlay.value = value }
