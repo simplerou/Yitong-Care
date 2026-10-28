@@ -1,0 +1,10 @@
+/* 保留原设计；只补充键盘操作与减少动态效果支持。 */
+:focus-visible { outline: 3px solid var(--brand); outline-offset: 3px; }
+.topbar :focus-visible { outline-color: white; }
+button:disabled { cursor: not-allowed; }
+button.recent { width: 100%; border: 0; background: transparent; text-align: left; font: inherit; }
+button.src-item, button.chunk-row { width: 100%; text-align: left; font: inherit; color: inherit; }
+button.chunk-row { background: transparent; border-top: 0; border-left: 0; border-right: 0; }
+button.chunk-row:hover { background: #f9fbff; }
+.modal-mask { overscroll-behavior: contain; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; } }
