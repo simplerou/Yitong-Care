@@ -29,6 +29,16 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://127.0.0.1:5173", "http://localhost:5173"]
     upload_dir: Path = BACKEND_DIR / "var" / "uploads"
     max_upload_bytes: int = Field(default=50 * 1024 * 1024, ge=1, le=50 * 1024 * 1024)
+    llm_base_url: str = ""
+    llm_api_key: SecretStr = SecretStr("")
+    llm_model: str = ""
+    llm_timeout_seconds: int = Field(default=60, ge=1, le=300)
+    tavily_api_key: SecretStr = SecretStr("")
+    tavily_extract_timeout_seconds: int = Field(default=60, ge=1, le=180)
+    tavily_timeout_seconds: int = Field(default=20, ge=1, le=60)
+    tavily_max_results: int = Field(default=3, ge=1, le=5)
+    tavily_include_domains: list[str] = ["gov.cn"]
+    policy_kb_ids: list[str] = ["general"]
     embedding_base_url: str = ""
     embedding_api_key: SecretStr = SecretStr("")
     embedding_model: str = Field(default="", max_length=80)

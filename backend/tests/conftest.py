@@ -8,6 +8,7 @@ from sqlalchemy.dialects.mysql import LONGTEXT, MEDIUMBLOB
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.services.conversations import get_conversation_lock_dir
 from app.core.deps import get_session_factory
 from app.db.base import Base
 from app.db.session import get_db
@@ -58,6 +59,7 @@ def client(tmp_path):
     app.dependency_overrides[get_session_factory] = lambda: factory
     app.dependency_overrides[get_storage] = lambda: storage
     app.dependency_overrides[get_index_manager] = lambda: IndexManager(tmp_path / 'faiss')
+    app.dependency_overrides[get_conversation_lock_dir] = lambda: tmp_path/'conversation_locks'
     with TestClient(app) as test_client:
         yield test_client, storage, factory
     engine.dispose()

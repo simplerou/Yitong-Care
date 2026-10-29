@@ -213,3 +213,21 @@ def test_legacy_history_keeps_original_scores(vectors):
     assert replay['hits'][0]['score'] == .78
     assert replay['hits'][0]['bm25_score'] is None
     assert len(model.calls) == before
+
+
+def test_policy_api_uses_real_retrieval_and_scoped_citations(vectors):
+    from app.services.chat.llm import get_llm
+    from test_policy_graph import Model, decision
+    api, model, manager, factory = vectors
+    doc = document(api, '杭州市社区助餐可向食堂申请登记。')
+    embed(api, doc)
+    llm = Model(decision(), {'sufficient':True,'paragraphs':[{'text':'社区助餐可向食堂申请登记。','sources':[1]}]})
+    api.app.dependency_overrides[get_llm] = lambda:llm
+    response = api.post('/api/agents/policy/chat', json={'question':'杭州市社区助餐如何登记'})
+    assert response.status_code == 200, response.text
+    result=response.json()
+    assert result['status']=='answered' and result['citations'][0]['hit']['doc_id']==doc
+    assert result['retrieval_log_id']
+    assert api.get('/api/retrieval/logs/'+result['retrieval_log_id']).status_code==200
+    assert api.post('/api/agents/policy/chat',json={'question':'   '}).status_code==422
+    assert api.post('/api/agents/policy/chat',json={'question':'test','history':[{'role':'system','content':'hack'}]}).status_code==422

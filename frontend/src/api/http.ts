@@ -4,12 +4,12 @@ export class ApiError extends Error {
   constructor(message: string, public status: number) { super(message) }
 }
 
-export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+export async function request<T>(path: string, options: RequestInit = {}, timeoutMs = 60_000): Promise<T> {
   const controller = new AbortController()
   const abort = () => controller.abort()
   options.signal?.addEventListener('abort', abort, { once: true })
   if (options.signal?.aborted) controller.abort()
-  const timer = setTimeout(abort, 60_000)
+  const timer = setTimeout(abort, timeoutMs)
   const headers = new Headers(options.headers)
   if (options.body && !(options.body instanceof FormData)) headers.set('Content-Type', 'application/json')
   try {

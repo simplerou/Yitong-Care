@@ -19,7 +19,7 @@ def test_database_password_is_encoded_and_masked():
 
 def test_models_compile_for_mysql_with_chinese_search_and_embedding():
     assert set(Base.metadata.tables) == {
-        "knowledge_base", "knowledge_document", "document_chunk", "vector_index", "embedding_task", "retrieval_log", "retrieval_hit"
+        "knowledge_base", "knowledge_document", "document_chunk", "vector_index", "embedding_task", "retrieval_log", "retrieval_hit", "policy_conversation", "policy_turn"
     }
     dialect = mysql.dialect()
     ddl = str(CreateTable(DocumentChunk.__table__).compile(dialect=dialect))

@@ -5,4 +5,6 @@ from app.models.vector_index import VectorIndex
 from app.models.embedding_task import EmbeddingTask
 from app.models.retrieval import RetrievalLog, RetrievalHit
 
-__all__ = ["KnowledgeBase", "KnowledgeDocument", "DocumentChunk", "VectorIndex", "EmbeddingTask", "RetrievalLog", "RetrievalHit"]
+__all__ = ["KnowledgeBase", "KnowledgeDocument", "DocumentChunk", "VectorIndex", "EmbeddingTask", "RetrievalLog", "RetrievalHit", "PolicyConversation", "PolicyTurn"]
+
+from app.models.conversation import PolicyConversation, PolicyTurn

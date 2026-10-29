@@ -1,0 +1,524 @@
+{
+  "version": "policy-baseline-1.1",
+  "reference": {
+    "title": "杭州市民政局 杭州市财政局关于健全高龄及困难老年人补贴制度的通知",
+    "document_number": "杭民发〔2024〕142号",
+    "document_date": "2024-12-26",
+    "pdf_sha256": "ea9b16fa9581e2bd2e027b570a8253881ea1733995d393d7b888d7a6cfb28afe",
+    "text_sha256": "b4de281a76d68ea8007ba4864527fa15e52ad7865cf67d8ada7db32b3070aa20",
+    "current_validity": "not_verified",
+    "reference_file": "reference.txt"
+  },
+  "cases": [
+    {
+      "id": "P01",
+      "topic": "政策概览",
+      "mode": "local",
+      "turns": [
+        "根据杭民发〔2024〕142号，杭州有哪些老年人补贴或补助？"
+      ],
+      "expected_statuses": [
+        "answered"
+      ],
+      "answer_groups": [
+        [
+          "养老服务补贴"
+        ],
+        [
+          "养老护理补贴"
+        ],
+        [
+          "基本生活补助"
+        ]
+      ],
+      "evidence_groups": [],
+      "reference_pages": [
+        1,
+        2
+      ],
+      "reference_quotes": [
+        "（一）养老服务补贴。",
+        "（二）养老护理补贴。",
+        "（三）基本生活补助。"
+      ],
+      "manual_checks": [
+        "区分养老服务补贴、养老护理补贴和基本生活补助；不将所有待遇统称高龄津贴。"
+      ],
+      "preconditions": "已将基准PDF完成解析、切块及当前模型向量入库；范围包含其知识库。"
+    },
+    {
+      "id": "P02",
+      "topic": "金额与地区",
+      "mode": "local",
+      "turns": [
+        "只解释杭民发〔2024〕142号原文：上城区户籍80至89周岁老人的高龄养老服务补贴是多少？"
+      ],
+      "expected_statuses": [
+        "answered"
+      ],
+      "answer_groups": [
+        [
+          "40\\s*元"
+        ],
+        [
+          "每.{0,3}月"
+        ]
+      ],
+      "evidence_groups": [
+        [
+          "40元"
+        ]
+      ],
+      "reference_pages": [
+        1
+      ],
+      "reference_quotes": [
+        "80 至 89 周岁的补贴标准为每人每月 40\n元"
+      ],
+      "manual_checks": [
+        "40元/人/月，保留地区户籍年龄条件；不说全杭州所有地区统一标准；不自行认定个人资格。"
+      ],
+      "preconditions": "已将基准PDF完成解析、切块及当前模型向量入库；范围包含其知识库。"
+    },
+    {
+      "id": "P03",
+      "topic": "年龄分档",
+      "mode": "local",
+      "turns": [
+        "根据杭民发〔2024〕142号，西湖区户籍90周岁以上老人的高龄补贴标准是多少？"
+      ],
+      "expected_statuses": [
+        "answered"
+      ],
+      "answer_groups": [
+        [
+          "100\\s*元"
+        ],
+        [
+          "每.{0,3}月"
+        ]
+      ],
+      "evidence_groups": [
+        [
+          "100元"
+        ]
+      ],
+      "reference_pages": [
+        1
+      ],
+      "reference_quotes": [
+        "90 周岁及以上的每人每月100 元。"
+      ],
+      "manual_checks": [
+        "100元/人/月，不与80—89岁40元档混淆。"
+      ],
+      "preconditions": "已将基准PDF完成解析、切块及当前模型向量入库；范围包含其知识库。"
+    },
+    {
+      "id": "P04",
+      "topic": "困难家庭类别",
+      "mode": "local",
+      "turns": [
+        "根据杭民发〔2024〕142号，低保家庭老年人养老服务补贴标准是多少？"
+      ],
+      "expected_statuses": [
+        "answered"
+      ],
+      "answer_groups": [
+        [
+          "125\\s*元"
+        ]
+      ],
+      "evidence_groups": [
+        [
+          "125元"
+        ]
+      ],
+      "reference_pages": [
+        1,
+        2
+      ],
+      "reference_quotes": [
+        "困难家庭老年人（60 周岁及以上）",
+        "每人每月 125 元"
+      ],
+      "manual_checks": [
+        "125元/人/月；年龄门槛60周岁及以上；不能套用高龄80周岁门槛。"
+      ],
+      "preconditions": "已将基准PDF完成解析、切块及当前模型向量入库；范围包含其知识库。"
+    },
+    {
+      "id": "P05",
+      "topic": "护理金额绑定",
+      "mode": "local",
+      "turns": [
+        "根据杭民发〔2024〕142号，拱墅区户籍低保家庭老年人，重度和中度失能的养老护理补贴分别是多少？"
+      ],
+      "expected_statuses": [
+        "answered"
+      ],
+      "answer_groups": [
+        [
+          "1695\\s*元"
+        ],
+        [
+          "1205\\s*元"
+        ]
+      ],
+      "evidence_groups": [
+        [
+          "1695元"
+        ],
+        [
+          "1205元"
+        ]
+      ],
+      "reference_pages": [
+        2
+      ],
+      "reference_quotes": [
+        "重度失能的每人每月 1695 元、中度失能的每人每月\n1205 元"
+      ],
+      "manual_checks": [
+        "重度1695、中度1205元/人/月，保留地区、困难家庭及失能条件。"
+      ],
+      "preconditions": "已将基准PDF完成解析、切块及当前模型向量入库；范围包含其知识库。"
+    },
+    {
+      "id": "P06",
+      "topic": "比例限定",
+      "mode": "local",
+      "turns": [
+        "根据杭民发〔2024〕142号，低边家庭轻度失能老年人的养老护理补贴标准如何确定？"
+      ],
+      "expected_statuses": [
+        "answered"
+      ],
+      "answer_groups": [
+        [
+          "不低于"
+        ],
+        [
+          "50\\s*[%％]"
+        ]
+      ],
+      "evidence_groups": [],
+      "reference_pages": [
+        2
+      ],
+      "reference_quotes": [
+        "补贴标准的 50%执行。"
+      ],
+      "manual_checks": [
+        "不低于低保家庭轻度失能标准的50%，不得说固定62.5元或直接去掉下限。"
+      ],
+      "preconditions": "已将基准PDF完成解析、切块及当前模型向量入库；范围包含其知识库。"
+    },
+    {
+      "id": "P07",
+      "topic": "地区边界",
+      "mode": "local",
+      "turns": [
+        "能否依据杭民发〔2024〕142号，直接认定杭州市其他区县80至89岁老人也统一每月40元？"
+      ],
+      "expected_statuses": [
+        "answered"
+      ],
+      "answer_groups": [
+        [
+          "自行|不能|不宜|不代表"
+        ]
+      ],
+      "evidence_groups": [],
+      "reference_pages": [
+        2,
+        3
+      ],
+      "reference_quotes": [
+        "其他区、县（市）根据",
+        "自行制定补贴标准。"
+      ],
+      "manual_checks": [
+        "明确不能由所列六地区标准推广全部区县；其他区县依据省文件及实际自行定标准。"
+      ],
+      "preconditions": "已将基准PDF完成解析、切块及当前模型向量入库；范围包含其知识库。"
+    },
+    {
+      "id": "P08",
+      "topic": "基本生活补助",
+      "mode": "local",
+      "turns": [
+        "根据杭民发〔2024〕142号，低保家庭老年人的基本生活补助怎么计算？"
+      ],
+      "expected_statuses": [
+        "answered"
+      ],
+      "answer_groups": [
+        [
+          "10\\s*[%％]"
+        ],
+        [
+          "低保|最低生活保障"
+        ]
+      ],
+      "evidence_groups": [],
+      "reference_pages": [
+        2
+      ],
+      "reference_quotes": [
+        "每月按照当地最低生活保障标准的 10%计发"
+      ],
+      "manual_checks": [
+        "当地低保标准10%，按月；不是养老护理补贴125元固定额。"
+      ],
+      "preconditions": "已将基准PDF完成解析、切块及当前模型向量入库；范围包含其知识库。"
+    },
+    {
+      "id": "P09",
+      "topic": "发放形式",
+      "mode": "local",
+      "turns": [
+        "根据杭民发〔2024〕142号，养老服务补贴和养老护理补贴都是直接发现金吗？"
+      ],
+      "expected_statuses": [
+        "answered"
+      ],
+      "answer_groups": [
+        [
+          "积分"
+        ]
+      ],
+      "evidence_groups": [],
+      "reference_pages": [
+        4
+      ],
+      "reference_quotes": [
+        "应采取电子积分的形式按月",
+        "可以货币\n形式发放。"
+      ],
+      "manual_checks": [
+        "按月电子积分至社保卡专户、服务给付；偏远地区货币发放须县级民政财政商定；基本生活补助银行账户另述。"
+      ],
+      "preconditions": "已将基准PDF完成解析、切块及当前模型向量入库；范围包含其知识库。"
+    },
+    {
+      "id": "P10",
+      "topic": "办理流程",
+      "mode": "local",
+      "turns": [
+        "根据杭民发〔2024〕142号，高龄老年人的养老服务补贴由谁申请？"
+      ],
+      "expected_statuses": [
+        "answered"
+      ],
+      "answer_groups": [
+        [
+          "代为申请"
+        ]
+      ],
+      "evidence_groups": [],
+      "reference_pages": [
+        3
+      ],
+      "reference_quotes": [
+        "高\n龄老年人养老服务补贴由户籍地或常住地乡镇人民政府（街道办\n事处）代为申请。"
+      ],
+      "manual_checks": [
+        "户籍地或常住地乡镇政府/街道代为申请，不编造网上表单或额外材料。"
+      ],
+      "preconditions": "已将基准PDF完成解析、切块及当前模型向量入库；范围包含其知识库。"
+    },
+    {
+      "id": "P11",
+      "topic": "待遇叠加",
+      "mode": "local",
+      "turns": [
+        "根据杭民发〔2024〕142号，符合条件时养老服务补贴、养老护理补贴和基本生活补助可以同时申领吗？"
+      ],
+      "expected_statuses": [
+        "answered"
+      ],
+      "answer_groups": [
+        [
+          "同时|叠加"
+        ]
+      ],
+      "evidence_groups": [],
+      "reference_pages": [
+        4
+      ],
+      "reference_quotes": [
+        "可以同时申领养老服务补贴、养老护理\n补贴、基本生活补助。"
+      ],
+      "manual_checks": [
+        "原文可同时申领，但保留符合条件及其他互斥条款；不能笼统说所有补贴不叠加。"
+      ],
+      "preconditions": "已将基准PDF完成解析、切块及当前模型向量入库；范围包含其知识库。"
+    },
+    {
+      "id": "P12",
+      "topic": "待遇互斥",
+      "mode": "local",
+      "turns": [
+        "根据杭民发〔2024〕142号，已享受重度残疾人护理补贴，还能重复享受养老护理补贴和高龄养老服务补贴吗？"
+      ],
+      "expected_statuses": [
+        "answered"
+      ],
+      "answer_groups": [
+        [
+          "不(?:得|能|再)?重复"
+        ]
+      ],
+      "evidence_groups": [],
+      "reference_pages": [
+        4
+      ],
+      "reference_quotes": [
+        "已享受重度残疾人护理补贴的，不重复享受养老\n护理补贴和高龄老年人的养老服务补贴。"
+      ],
+      "manual_checks": [
+        "不重复享受；不混淆困难残疾人生活补贴（另有可同时申领条款）。"
+      ],
+      "preconditions": "已将基准PDF完成解析、切块及当前模型向量入库；范围包含其知识库。"
+    },
+    {
+      "id": "P13",
+      "topic": "长护险衔接",
+      "mode": "local",
+      "turns": [
+        "根据杭民发〔2024〕142号，符合规定困难家庭的老人参加长护险后，养老护理补贴怎么衔接？"
+      ],
+      "expected_statuses": [
+        "answered"
+      ],
+      "answer_groups": [
+        [
+          "差额"
+        ],
+        [
+          "不(?:得|能|再)?重复"
+        ]
+      ],
+      "evidence_groups": [],
+      "reference_pages": [
+        4,
+        5
+      ],
+      "reference_quotes": [
+        "差额部\n分由民政部门负责定期发放。"
+      ],
+      "manual_checks": [
+        "长护险待遇高于护理补贴时不重复，低于时民政发差额；不可把长护险当高龄津贴。"
+      ],
+      "preconditions": "已将基准PDF完成解析、切块及当前模型向量入库；范围包含其知识库。"
+    },
+    {
+      "id": "P14",
+      "topic": "必要追问",
+      "mode": "local",
+      "turns": [
+        "我能申请养老补贴吗？"
+      ],
+      "expected_statuses": [
+        "clarification"
+      ],
+      "answer_groups": [],
+      "evidence_groups": [],
+      "reference_pages": [],
+      "reference_quotes": [],
+      "manual_checks": [
+        "先明确地区、补贴类别及必要条件，不索取身份证号电话，不直接认定符合资格。"
+      ],
+      "preconditions": "已将基准PDF完成解析、切块及当前模型向量入库；范围包含其知识库。"
+    },
+    {
+      "id": "P15",
+      "topic": "多轮追问",
+      "mode": "local",
+      "turns": [
+        "根据杭民发〔2024〕142号，上城区户籍80至89岁老人的高龄补贴是多少？",
+        "那90岁呢？"
+      ],
+      "expected_statuses": [
+        "answered"
+      ],
+      "answer_groups": [
+        [
+          "100\\s*元"
+        ]
+      ],
+      "evidence_groups": [],
+      "reference_pages": [
+        1
+      ],
+      "reference_quotes": [
+        "90 周岁及以上的每人每月100 元。"
+      ],
+      "manual_checks": [
+        "第二问延续文件、上城区及户籍上下文，回答90周岁100元/月，不继承错误40元。"
+      ],
+      "preconditions": "已将基准PDF完成解析、切块及当前模型向量入库；范围包含其知识库。"
+    },
+    {
+      "id": "P16",
+      "topic": "未知事项",
+      "mode": "local",
+      "turns": [
+        "只根据杭民发〔2024〕142号，养老护理补贴申请表的具体下载链接是什么？"
+      ],
+      "expected_statuses": [
+        "insufficient",
+        "answered"
+      ],
+      "answer_groups": [],
+      "evidence_groups": [],
+      "reference_pages": [],
+      "reference_quotes": [],
+      "manual_checks": [
+        "无原文链接时说明不足，不编造URL或把官网首页当表格直链。"
+      ],
+      "preconditions": "已将基准PDF完成解析、切块及当前模型向量入库；范围包含其知识库。"
+    },
+    {
+      "id": "W01",
+      "topic": "最新政策",
+      "mode": "web",
+      "turns": [
+        "杭州市最新的高龄津贴政策是什么？"
+      ],
+      "expected_statuses": [
+        "answered",
+        "insufficient"
+      ],
+      "answer_groups": [],
+      "evidence_groups": [],
+      "reference_pages": [],
+      "reference_quotes": [],
+      "manual_checks": [
+        "必须触发联网；区分原文规定和现行效力，官方页面日期/抓取日期不能当生效日期。"
+      ],
+      "preconditions": "Tavily配置可用；本地命中不代替最新性核验。"
+    },
+    {
+      "id": "W02",
+      "topic": "现行效力",
+      "mode": "web",
+      "turns": [
+        "杭民发〔2024〕142号现在还有效吗？有没有后续调整？"
+      ],
+      "expected_statuses": [
+        "answered",
+        "insufficient"
+      ],
+      "answer_groups": [],
+      "evidence_groups": [],
+      "reference_pages": [],
+      "reference_quotes": [],
+      "manual_checks": [
+        "不能从没搜到废止推导仍有效；结果不足时明确尚不能确认，不给无依据结论。"
+      ],
+      "preconditions": "Tavily配置可用；本地命中不代替最新性核验。"
+    }
+  ]
+}

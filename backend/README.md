@@ -176,3 +176,29 @@ python -m scripts.rebuild_index
 测试使用模拟模型响应、真实 FAISS 文件和隔离数据库，覆盖批次重试、范围隔离、索引重建、旧版本回滚和检索记录级联行为。真实 MySQL 的在线迁移及用户环境浏览器联调仍需在本机验证。
 
 迁移至最新版本：`python -m alembic upgrade head`（0004）。无需重新向量化或重建 FAISS。新记录 strategy=bm25_rrf；旧记录 legacy_weighted 保留原分数及阈值。返回 bm25_score、semantic_rank、bm25_rank；lexical_score 在新策略中为原始 BM25。
+
+## 政策顾问（LangGraph + Qwen）
+
+已接入 `/api/agents/policy/chat` 与 `/api/agents/policy/config`。LLM 沿用 `.env` 配置，范围由 `POLICY_KB_IDS` 控制（默认 `["general"]`）。图按理解、追问、检索、生成、引用编号检查运行；无有效依据时返回资料不足，不回退演示。当前不流式，政策顾问网页通过会话接口持久化（需迁移0005）；引用编号检查不等于事实核验。详见 [政策顾问实现说明](../docs/项目文档/政策顾问实现说明.md)。无新增数据库迁移，重启后端生效。
+
+## Tavily 联网搜索
+
+在本地 `.env` 填写 `TAVILY_API_KEY=""` 并重启后端即可启用；`.env.example` 保留空白模板。默认 `TAVILY_INCLUDE_DOMAINS=["gov.cn"]`、`TAVILY_MAX_RESULTS=3`、`TAVILY_TIMEOUT_SECONDS=20`。不需要额外 SDK 或数据库迁移。
+
+政策顾问本地零命中、资料不足或涉及时效问题时，执行一次搜索及正文提取，统一交给 Qwen 回答，网页引用附来源链接。Key 未配置或网络失败会明确提示，保留本地证据，不将搜索摘要当作政策原文。取得官方网页不等于已确认政策仍有效；不自动入库。
+
+填 Key 后运行 `python -m scripts.check_tavily` 验证实际搜索与正文提取；该命令会调用 Tavily 服务。
+
+政策顾问现增加 `verify_grounding` 原文一致性辅助检查；通过检查仍不等于权威政策审核。类别区分、审查失败处理、额外模型调用成本及待办见 [优化记录](../docs/项目文档/政策顾问优化记录.md)。无新增数据库迁移。
+
+## 固定政策业务评测
+
+`python -m scripts.evaluate_policy --validate-only` 校验18条固定用例；`python -m scripts.evaluate_policy` 运行16条本地用例；加 `--web` 运行全部18条（会调用真实模型及搜索服务）。报告默认写入被忽略的 `var/evaluations/`，包括完整回答和来源快照。机械断言不代表政策事实准确，仍需人工逐条核对。详见 [评测说明](../docs/项目文档/政策顾问评测说明.md)。
+
+正文批量提取默认超时独立设为60秒（`TAVILY_EXTRACT_TIMEOUT_SECONDS`），搜索仍使用`TAVILY_TIMEOUT_SECONDS`。评测可用`--recheck-report <report.json>`离线复核原回答，不重复消耗模型额度。
+
+网页来源新增截取和完整性元数据，正文提取不等于全文/附件核验。答案会检查无依据的全文缺项判断及“全体”适用范围，限于有限模式和模型辅助审查，不能代替人工审核。
+
+## 政策顾问会话保存
+
+执行 `python -m alembic upgrade head` 升级0005，重启后端后使用新会话接口。问答、来源及审查快照保存在MySQL，回放不请求模型；UUID去重、失败显式重试及单机文件锁保护写入。无状态 `/agents/policy/chat` 保留兼容，评测不写入会话。详见 [会话持久化说明](../docs/项目文档/政策顾问会话持久化说明.md)。
