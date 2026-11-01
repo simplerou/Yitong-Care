@@ -143,3 +143,17 @@ def test_internal_error_is_not_persisted_with_sensitive_exception_details(chat,m
     replay=api.get(f'{BASE}/{key}').json()['turns'][0]
     assert replay['status']=='failed' and replay['response'] is None
     assert 'test-sensitive' not in replay['error']
+
+
+def test_user_context_survives_three_pairs_and_is_isolated_per_session(chat):
+    api,factory,calls=chat;key=create(api)
+    for question in ['22岁温州市户籍','龙湾区的','高龄补贴','待遇标准','支付比例','服务项目']:
+        result=send(api,key,question)
+        assert result.status_code==200,result.text
+    state=calls[-1].dialogue_state
+    assert state.age==22 and state.region=='温州市' and state.district=='龙湾区'
+    assert state.benefit=='高龄津贴' and state.aspect=='服务项目'
+    assert all('22岁' not in turn.content for turn in calls[-1].history if turn.role=='user')
+    assert result.json()['response']['dialogue_state']['age']==22
+    other=create(api);send(api,other,'我能申请补贴吗')
+    assert calls[-1].dialogue_state.age is None and calls[-1].dialogue_state.region==''

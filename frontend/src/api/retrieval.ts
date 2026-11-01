@@ -1,6 +1,7 @@
 import { request } from './http'
+import type { PolicyMetadata } from './documents'
 export interface SearchParameters { query:string; scope:string; top_k:number; threshold:number }
-export interface SearchHit { chunk_id:number; doc_id:string; kb_id:string; doc_name:string; type:string; source:string; seq:number; start:number; end:number; chars:number; text:string; score:number; cos:number; lexical_score:number; bm25_score?:number|null; semantic_rank?:number|null; bm25_rank?:number|null }
+export interface SearchHit { policy_metadata?:PolicyMetadata|null;context_expanded?:boolean;matched_start?:number|null;matched_end?:number|null;heading?:string|null; chunk_id:number; doc_id:string; kb_id:string; doc_name:string; type:string; source:string; seq:number; start:number; end:number; chars:number; text:string; score:number; cos:number; lexical_score:number; bm25_score?:number|null; semantic_rank?:number|null; bm25_rank?:number|null }
 export interface SearchResult extends SearchParameters { strategy?:string; log_id:string; took_ms:number; vector_count:number; model:string; hits:SearchHit[]; historical:boolean }
 export interface RetrievalRecord { id:string; strategy?:string; query:string; scope:string; top_k:number; threshold:number; took_ms:number; hit_count:number; top_score:number|null; top_source:string|null; created_at:string }
 export const retrievalApi = {

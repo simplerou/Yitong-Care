@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PolicyMetadataForm from './PolicyMetadataForm.vue'
 import type { Chunk, KnowledgeDocument } from '../../types/models'
 defineProps<{ doc: KnowledgeDocument; chunks: Chunk[] }>()
 const emit = defineEmits<{ openChunk: [chunk: Chunk] }>()
@@ -9,6 +10,7 @@ const emit = defineEmits<{ openChunk: [chunk: Chunk] }>()
       <div v-for="[label,value] in [['文件类型', doc.type], ['文件大小', doc.size], ['上传时间', doc.uploadAt], ['切块数量', `${chunks.length} 段`], ['已入库', `${doc.vectorCount || 0} 条`], ['来源', doc.source]]" :key="label" class="kv"><span>{{ label }}</span><b>{{ value }}</b></div>
     </div>
     <div v-if="doc.errorMessage" class="knowledge-error" role="alert">{{ doc.errorMessage }}</div>
+    <PolicyMetadataForm v-if="doc.persisted" :key="doc.id" :document-id="doc.id"/>
     <template v-if="doc.text">
       <div class="card-head" style="padding:0 0 10px;border:0"><b>解析正文</b><span class="sub">{{ doc.text.length }} 字符</span></div>
       <div class="original-text document-body">{{ doc.text }}</div>

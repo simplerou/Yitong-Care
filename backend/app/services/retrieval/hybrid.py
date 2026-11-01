@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import BusinessError
 from app.models import DocumentChunk, KnowledgeDocument, RetrievalHit, RetrievalLog
 from app.schemas.retrieval import RetrievalRecord, SearchHit, SearchRequest, SearchResult
+from app.services.retrieval.context import expand_hit
 from app.services.retrieval.bm25 import bm25, rrf
 from app.services.embedding.base import Embedder
 from app.services.vectorstore.index_manager import IndexManager
@@ -31,6 +32,7 @@ def search(db: Session, request: SearchRequest, embedder: Embedder, manager: Ind
     groups = defaultdict(set)
     for chunk_id, kb_id, _ in pool: groups[kb_id].add(chunk_id)
     hits = []
+    documents = {}
     if pool:
         query = np.asarray(embedder.embed([request.query])[0], dtype=np.float32)
         if query.shape != (embedder.dimensions,) or not np.isfinite(query).all() or np.linalg.norm(query) <= 0:
@@ -58,6 +60,7 @@ def search(db: Session, request: SearchRequest, embedder: Embedder, manager: Ind
             rows = db.execute(select(DocumentChunk, KnowledgeDocument).join(KnowledgeDocument, KnowledgeDocument.id == DocumentChunk.doc_id)
                 .where(DocumentChunk.id.in_(ids), *conditions)).all()
             for chunk, doc in rows:
+                documents[doc.id] = doc
                 cosine = semantic.get(chunk.id)
                 if cosine is None:
                     vector = np.frombuffer(chunk.embedding, dtype='<f4')
@@ -69,17 +72,18 @@ def search(db: Session, request: SearchRequest, embedder: Embedder, manager: Ind
                 lex = lexical.get(chunk.id, 0.)
                 score = fused[chunk.id]
                 hits.append(SearchHit(chunk_id=chunk.id, doc_id=doc.id, kb_id=doc.kb_id, doc_name=doc.name,
-                    type=doc.type, source=doc.source or '本地上传', seq=chunk.seq, start=chunk.start_offset,
+                    policy_metadata=doc.policy_metadata, type=doc.type, source=doc.source or '本地上传', seq=chunk.seq, start=chunk.start_offset,
                     end=chunk.start_offset + chunk.chars, chars=chunk.chars, text=chunk.content,
                     score=score, cos=round(cosine, 6), lexical_score=round(lex, 6), bm25_score=round(lex, 6),
                     semantic_rank=semantic_ranks.get(chunk.id), bm25_rank=lexical_ranks.get(chunk.id)))
             hits.sort(key=lambda h: (-h.score, h.chunk_id)); hits = hits[:request.top_k]
+            hits = [expand_hit(hit, documents[hit.doc_id]) for hit in hits]
     took = max(1, round((perf_counter() - started) * 1000))
     record = RetrievalLog(id=f'{time_ns():020d}_{uuid4().hex[:12]}', query=request.query, scope=request.scope, top_k=request.top_k,
         strategy='bm25_rrf', threshold=request.threshold, took_ms=took, hit_count=len(hits), vector_count=len(pool), model=embedder.key)
     db.add(record); db.flush()
     for rank, hit in enumerate(hits, 1):
-        db.add(RetrievalHit(log_id=record.id, chunk_id=hit.chunk_id, rank=rank, score=hit.score, snapshot=hit.model_dump()))
+        db.add(RetrievalHit(log_id=record.id, chunk_id=hit.chunk_id, rank=rank, score=hit.score, snapshot=hit.model_dump(mode='json')))
     db.commit()
     return SearchResult(log_id=record.id, query=request.query, scope=request.scope, top_k=request.top_k,
         strategy='bm25_rrf', threshold=request.threshold, took_ms=took, vector_count=len(pool), model=embedder.model, hits=hits)

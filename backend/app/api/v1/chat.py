@@ -58,4 +58,18 @@ def conversation_ask(conversation_id: UUID,request: ConversationQuestion,db: Dat
                      embedder: Model,manager: Manager,llm: Annotated[QwenClient,Depends(get_llm)],
                      web: Annotated[TavilySearch,Depends(get_web_search)]):
     return conversations.ask(db,str(conversation_id),request,root,
-        lambda question:run_policy(question,db,embedder,manager,llm,get_settings().policy_kb_ids,web=web))
+        lambda question:run_policy(question,db,embedder,manager,llm,get_settings().policy_kb_ids,web=web,
+            progress=lambda stage:conversations.record_stage(db,str(conversation_id),str(request.request_id),stage)))
+
+
+from app.schemas.policy import ConsultationContext
+
+
+@router.put('/conversations/{conversation_id}/context',response_model=ConversationRecord)
+def conversation_context(conversation_id: UUID,request: ConsultationContext,db: DatabaseSession,root: LockDirectory):
+    return conversations.update_context(db,str(conversation_id),root,request)
+
+
+@router.get('/conversations/{conversation_id}/turns/{request_id}/progress')
+def conversation_progress(conversation_id: UUID,request_id: UUID,db: DatabaseSession):
+    return conversations.progress(db,str(conversation_id),str(request_id))

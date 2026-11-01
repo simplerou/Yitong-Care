@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 
 from pydantic import BaseModel, field_serializer
 
+from app.schemas.policy import PolicyMetadata
 from app.schemas.chunk import ChunkRead
 
 
@@ -11,6 +12,7 @@ class KnowledgeBaseRead(BaseModel):
 
 
 class DocumentSummary(BaseModel):
+    policy_metadata: PolicyMetadata | None = None
     id: str
     kb_id: str
     name: str

@@ -1,12 +1,14 @@
 import { computed,ref } from 'vue'
 import { defineStore } from 'pinia'
-import { conversationsApi,type StoredTurn,type ConversationRecord,type ConversationDetail } from '../api/chat'
+import { conversationsApi,type StoredTurn,type ConversationRecord,type ConversationDetail,type ConsultationContext } from '../api/chat'
 import { ApiError } from '../api/http'
 const selectionKey='yitong-policy-conversation'
 const message=(e:unknown)=>e instanceof Error?e.message:'会话服务异常，请重试。'
 export const usePolicyChatStore=defineStore('policyChat',()=>{
  const sessions=ref<ConversationRecord[]>([]),total=ref(0),page=ref(1),active=ref<ConversationRecord|null>(null),turns=ref<StoredTurn[]>([])
  const loading=ref(false),sending=ref(false),error=ref(''),hasMore=ref(false),before=ref<number|null>(null),evidenceTurnId=ref(''),unconfirmed=ref(false)
+ const stage=ref('')
+ let progressTimer:ReturnType<typeof setTimeout>|undefined
  const last=computed(()=>turns.value.at(-1)),pending=computed(()=>last.value?.status==='running'&&!last.value.transient)
  const busy=computed(()=>loading.value||sending.value||pending.value)
  const latest=computed(()=>turns.value.find(t=>t.id===evidenceTurnId.value)?.response||null)
@@ -33,8 +35,16 @@ export const usePolicyChatStore=defineStore('policyChat',()=>{
  }
  async function older(){if(!active.value||!before.value||loading.value)return;const token=generation;loading.value=true;try{const detail=await conversationsApi.detail(active.value.id,before.value);if(token!==generation)return;turns.value=[...detail.turns.filter(t=>!turns.value.some(old=>old.id===t.id)),...turns.value];hasMore.value=detail.has_more;before.value=detail.next_before_seq}catch(e){if(token===generation)error.value=message(e)}finally{if(token===generation)loading.value=false}}
  function accept(turn:StoredTurn){const index=turns.value.findIndex(t=>t.id===turn.id);if(index>=0)turns.value[index]=turn;else turns.value.push(turn);turns.value.sort((a,b)=>a.seq-b.seq);if(turn.response)evidenceTurnId.value=turn.id;unconfirmed.value=false;uncertain=null}
+ function trackProgress(conversationId:string,requestId:string,token:number){
+  clearTimeout(progressTimer)
+  progressTimer=setTimeout(async()=>{
+   try{const data=await conversationsApi.progress(conversationId,requestId);if(token===generation&&sending.value)stage.value=data.stage||'understand'}catch{/* Final request and normal recovery own error handling. */}
+   if(token===generation&&sending.value)trackProgress(conversationId,requestId,token)
+  },1500)
+ }
+ async function saveContext(context:ConsultationContext){if(busy.value||!active.value)return;const id=active.value.id,token=generation;loading.value=true;error.value='';try{const row=await conversationsApi.saveContext(id,context);if(token===generation)active.value=row}catch(e){if(token===generation)error.value=message(e);throw e}finally{if(token===generation)loading.value=false}}
  async function submit(id:string,question:string,retry:boolean){
-  if(!active.value)return;const conversationId=active.value.id,token=generation;sending.value=true;error.value='';evidenceTurnId.value='';controller=new AbortController()
+  if(!active.value)return;const conversationId=active.value.id,token=generation;sending.value=true;error.value='';evidenceTurnId.value='';controller=new AbortController();stage.value='understand';trackProgress(conversationId,id,token)
   const now=new Date().toISOString();const prior=turns.value.find(t=>t.id===id)
   if(prior){prior.status='running';prior.error=null}else turns.value.push({id,conversation_id:conversationId,seq:(last.value?.seq||0)+1,question,status:'running',attempts:1,response:null,error:null,created_at:now,updated_at:now,transient:true})
   try{const turn=await conversationsApi.ask(conversationId,id,question,retry,controller.signal);if(token!==generation)return;accept(turn);void loadList().catch(()=>{})}
@@ -43,7 +53,7 @@ export const usePolicyChatStore=defineStore('policyChat',()=>{
     if(stored){uncertain=null;unconfirmed.value=false;if(stored.status==='succeeded')error.value='';else if(stored.status==='failed')error.value=stored.error||error.value}
     else{uncertain={id,question,conversationId};unconfirmed.value=true;error.value='请求保存状态尚未确认。点击重试将先核对服务器，再使用同一请求标识处理。'}
    }catch{if(token===generation){uncertain={id,question,conversationId};unconfirmed.value=true;const row=turns.value.find(t=>t.id===id);if(row)row.status='failed'}}
-  }finally{if(token===generation){sending.value=false;schedule()}}
+  }finally{if(token===generation){clearTimeout(progressTimer);stage.value='';sending.value=false;schedule()}}
  }
  async function send(question:string){if(busy.value||unconfirmed.value||!question.trim())return;if(!active.value)await create();if(!active.value)return;await submit(crypto.randomUUID(),question.trim(),false)}
  async function retry(){if(busy.value||!active.value)return
@@ -60,6 +70,6 @@ export const usePolicyChatStore=defineStore('policyChat',()=>{
   if(!active.value&&sessions.value[0])await select(sessions.value[0].id)
  }
  async function moreSessions(){try{await loadList(true)}catch(e){error.value=message(e)}}
- function stop(){++generation;clearTimeout(poll);controller?.abort();sending.value=false;loading.value=false}
- return{sessions,total,active,turns,loading,sending,error,hasMore,before,evidenceTurnId,unconfirmed,busy,pending,latest,initialize,select,create,older,send,retry,remove,moreSessions,stop}
+ function stop(){clearTimeout(progressTimer);stage.value='';++generation;clearTimeout(poll);controller?.abort();sending.value=false;loading.value=false}
+ return{stage,saveContext,sessions,total,active,turns,loading,sending,error,hasMore,before,evidenceTurnId,unconfirmed,busy,pending,latest,initialize,select,create,older,send,retry,remove,moreSessions,stop}
 })

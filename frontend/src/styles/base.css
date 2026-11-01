@@ -318,7 +318,7 @@ html.senior .senior-dot { background: #ffd166; box-shadow: 0 0 0 3px rgba(255, 2
   background-position: right 11px center;
   padding-right: 32px;
 }
-.input:focus, .select:focus, textarea.input:focus { border-color: #7aa7ff; box-shadow: 0 0 0 3px rgba(27, 100, 242, .1); }
+.input:focus, .select:focus, .app-select:focus-within, textarea.input:focus { border-color: #7aa7ff; box-shadow: 0 0 0 3px rgba(27, 100, 242, .1); }
 textarea.input { height: auto; padding: 10px 12px; resize: vertical; line-height: 1.65; }
 
 input[type="range"] {
@@ -894,3 +894,22 @@ html.senior .stat-label { font-size: 13px; }
   .brand { min-width: 0; }
   .brand-text small { display: none; }
 }
+
+/* Preserve the existing closed control; only the expanded list uses the shared popup. */
+.app-select.el-select { display:inline-flex; align-items:center; padding:0; border:0; background:none; --el-font-size-base:13.5px; }
+/* The measured popup anchor now occupies the entire visible control. */
+.app-select .el-select__wrapper { position:relative; box-sizing:border-box; width:100%; height:100%; min-height:0; padding:0 32px 0 12px; background:var(--card); border:1px solid var(--line-2); border-radius:inherit; box-shadow:none !important; font:inherit; }
+.app-select .el-select__wrapper.is-focused { border-color:#7aa7ff; }
+.app-select .el-select__wrapper::after { content:""; position:absolute; right:11px; top:50%; width:14px; height:14px; pointer-events:none; background:center / 14px 14px no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%236b7c95' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m9 5 7 7-7 7'/%3E%3C/svg%3E"); transform:translateY(-50%) rotate(0deg); transition:transform .16s ease; }
+.app-select.is-open .el-select__wrapper::after { transform:translateY(-50%) rotate(90deg); }
+@media (prefers-reduced-motion:reduce) { .app-select .el-select__wrapper::after { transition:none; } }
+.app-select .el-select__selection { min-width:0; }
+.app-select .el-select__placeholder { color:var(--ink); font:inherit; }
+.app-select .el-select__suffix { display:none; }
+.app-select:has(.is-disabled) { opacity:.6; cursor:not-allowed; }
+.app-select-options.el-popper { --el-color-primary:var(--brand); --el-text-color-regular:var(--ink); --el-border-color-light:var(--line); max-width:calc(100vw - 24px); border:1px solid var(--line); border-radius:var(--r); box-shadow:var(--shadow-lg); }
+.app-select-options .el-select-dropdown__list { padding:6px; }
+.app-select-options .el-select-dropdown__item { height:auto; min-height:40px; display:flex; align-items:center; line-height:1.5; padding:9px 12px; border-radius:var(--r-sm); white-space:normal; overflow-wrap:anywhere; }
+.app-select-options .el-select-dropdown__item.is-hovering { background:var(--brand-50); }
+.app-select-options .el-select-dropdown__item.is-selected { color:var(--brand); background:var(--brand-50); font-weight:600; }
+.app-select-options .el-select-dropdown__item.is-disabled { color:var(--muted-2); background:transparent; }

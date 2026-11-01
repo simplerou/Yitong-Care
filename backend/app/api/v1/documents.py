@@ -62,3 +62,14 @@ def retry(document_id: str, background_tasks: BackgroundTasks, db: DatabaseSessi
 def remove(document_id: str, db: DatabaseSession, storage: Storage, manager: Manager):
     document_service.delete_document(db, storage, document_id, manager)
     return Response(status_code=204)
+
+
+from app.schemas.policy import PolicyMetadata
+
+
+@router.put('/documents/{document_id}/policy', response_model=DocumentSummary)
+def update_policy(document_id: str, request: PolicyMetadata, db: DatabaseSession):
+    doc = document_service.find_document(db, document_id, lock=True)
+    doc.policy_metadata = request.model_dump(mode='json')
+    db.commit()
+    return document_service.summary(db, doc)

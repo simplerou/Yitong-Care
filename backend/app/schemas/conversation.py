@@ -2,6 +2,7 @@ from datetime import UTC, datetime
 from typing import Literal
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
+from app.schemas.policy import ConsultationContext
 from app.schemas.chat import PolicyAnswer
 
 
@@ -16,6 +17,7 @@ class TimeRecord(BaseModel):
 
 
 class ConversationRecord(TimeRecord):
+    context: ConsultationContext | None = None
     id: str
     title: str
 
@@ -26,6 +28,7 @@ class StoredTurn(TimeRecord):
     seq: int
     question: str
     status: Literal['running','succeeded','failed']
+    stage: str | None = None
     attempts: int
     response: PolicyAnswer | None
     error: str | None

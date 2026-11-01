@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppSelect from '../../components/common/AppSelect.vue'
 import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { useKnowledgeStore, mapChunk } from '../../stores/knowledge'
 import { useDemoStore } from '../../stores/demo'
@@ -75,7 +76,7 @@ onBeforeUnmount(() => { disposed = true; generation++; clearTimeout(timer); cont
     <div v-else-if="!selectable.length && !error" class="card"><EmptyState icon="doc" title="还没有可切块的文档" description="请先上传文档，并等待正文解析完成。"><RouterLink class="btn primary" to="/kb">去上传文档</RouterLink></EmptyState></div>
     <div v-else class="split-2">
       <div class="card cfg-card">
-        <div class="field"><label for="chunkDoc">选择文档</label><select id="chunkDoc" v-model="knowledge.selectedDocId" class="select" :disabled="saving"><option v-for="d in selectable" :key="d.id" :value="d.id">{{ d.name }}</option></select></div>
+        <div class="field"><label for="chunkDoc">选择文档</label><AppSelect id="chunkDoc" v-model="knowledge.selectedDocId" class="select" :disabled="saving"><option v-for="d in selectable" :key="d.id" :value="d.id">{{ d.name }}</option></AppSelect></div>
         <div class="field"><label for="sizeRange">切块大小 <b><span id="sizeVal">{{ size }}</span> 字符</b></label><input id="sizeRange" v-model.number="size" type="range" min="100" max="500" step="10" :disabled="saving"><div class="hint">建议 200–300 字，兼顾语义完整与检索精度。</div></div>
         <div class="field"><label for="ovRange">重叠长度 <b><span id="ovVal">{{ overlap }}</span> 字符</b></label><input id="ovRange" v-model.number="overlap" type="range" min="0" max="100" step="5" :disabled="saving"><div class="hint">按完整句子保留重叠，实际重叠字数可小于设定值。</div></div>
         <div class="field"><label>快捷预设</label><div class="presets"><button v-for="p in [{ label:'精细', size:150, overlap:30 }, { label:'标准', size:220, overlap:30 }, { label:'粗粒度', size:350, overlap:60 }]" :key="p.size" class="chip" :class="{ on:size === p.size }" :disabled="saving" @click="size = p.size; overlap = p.overlap">{{ p.label }}</button></div></div>

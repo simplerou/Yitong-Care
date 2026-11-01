@@ -14,7 +14,7 @@ def answer(text='每月40元。【1】',index=1):
 
 def test_dataset_quotes_and_ids_are_valid():
     data,cases=load_dataset()
-    assert len(cases)==18 and len({c.id for c in cases})==18
+    assert len(cases)==22 and len({c.id for c in cases})==22
     assert sum(c.mode=='web' for c in cases)==2
     assert data['reference']['current_validity']=='not_verified'
     assert next(c for c in cases if c.id=='P15').turns[-1]=='那90岁呢？'

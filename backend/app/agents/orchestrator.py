@@ -2,7 +2,7 @@
 import re
 import logging
 from datetime import date
-from typing import TypedDict
+from typing import TypedDict, Literal
 from langgraph.graph import StateGraph, START, END
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from app.schemas.chat import PolicyAnswer, PolicyQuestion, Citation
@@ -10,10 +10,15 @@ from app.schemas.retrieval import SearchRequest
 from app.services.chat.prompt_builder import UNDERSTAND, GENERATE
 from app.services.chat.citation import Draft
 from app.services.chat.evidence_limits import evidence_scope_issues
-from app.services.chat.grounding import LABELS, review_with_repair, GroundingReviewError, evidence_spans, numeric_support_issues, remove_extra_calculation
+from app.services.chat.grounding import LABELS, review_with_repair, GroundingReviewError, evidence_spans, ages, numeric_support_issues, remove_extra_calculation, remove_denied_user_amount
 from app.services.chat.policy_checks import unsupported_validity_claim
 from app.services.retrieval import hybrid
 from app.core.exceptions import BusinessError
+from app.services.chat.clarification import confirmed_question, explicit_standard_question, same_clarification, age_followup_question, explicit_applicability_question, explicitly_provided_fields, remaining_clarification
+from app.services.chat.answer_scope import requested_gaps,gap_message,concept_help
+from app.services.web.query_plan import focused_query
+from app.services.chat.dialogue_state import build_dialogue, context_query
+from app.services.chat.metrics import PolicyMetrics, MeasuredLLM
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +27,7 @@ INSUFFICIENT = '当前知识库资料不足以支持可靠回答。请补充相�
 
 class Understanding(BaseModel):
     model_config = ConfigDict(strict=True, extra='forbid')
+    missing_fields: list[Literal['age','household_region','district','residence','benefit','income','disability']] = Field(default_factory=list, max_length=7)
     needs_freshness: bool = False
     supported: bool
     needs_clarification: bool
@@ -56,6 +62,8 @@ class State(TypedDict, total=False):
     web_status: str
     web_diagnostics: object
     web_warning: str | None
+    web_query: str
+    web_refine_found: bool
     web_attempted: bool
     vector_count: int
     reason: str
@@ -63,12 +71,35 @@ class State(TypedDict, total=False):
     steps: list[str]
 
 
-def run_policy(request: PolicyQuestion, db, embedder, manager, llm, kb_ids: list[str], web=None, trace=None) -> PolicyAnswer:
+def run_policy(request: PolicyQuestion, db, embedder, manager, llm, kb_ids: list[str], web=None, trace=None, progress=None) -> PolicyAnswer:
+    metrics = PolicyMetrics()
+    llm = MeasuredLLM(llm, metrics)
     llm.ensure_configured()
     history = [turn.model_dump() for turn in request.history]
+    dialogue=request.dialogue_state or build_dialogue([*[turn.content for turn in request.history if turn.role=='user'],request.question])
+    resolved_confirmation = confirmed_question(request.question, request.history)
+    resolved_followup = age_followup_question(request.question, request.history)
+    resolved_input = resolved_followup or resolved_confirmation or context_query(dialogue,request.question)
+    provided_fields = explicitly_provided_fields(request.question,request.history)
+    for field,value in [('age',dialogue.age is not None),('household_region',bool(dialogue.household)),('district',bool(dialogue.district)),('benefit',bool(dialogue.benefit))]:
+        if value: provided_fields.add(field)
+    user_ages = ages(request.question + '\n' + '\n'.join(turn.content for turn in request.history if turn.role=='user') + '\n' + (resolved_confirmation or ''))
+    if dialogue.age is not None: user_ages.add(dialogue.age)
+    if request.context.age is not None: user_ages.add(request.context.age)
+
+    def effective_question(base=None):
+        context = request.context.model_dump(exclude_none=True)
+        values = {key: value for key, value in context.items() if value != ''}
+        if not values: return base or request.question
+        # Values are explicitly entered by the user, never inferred from assistant answers.
+        import json
+        original = base or request.question
+        suffix = '\n本次咨询已确认条件（若与本条问题冲突，以本条问题为准）：' + json.dumps(values, ensure_ascii=False)
+        # Preserve the complete question when extra context would exceed retrieval limits.
+        return original + suffix if len(original + suffix) <= 1000 else original
 
     def understand(state):
-        payload = {'question':request.question, 'history':history, 'today':date.today().isoformat()}
+        payload = {'question':resolved_input, 'user_reply':request.question, 'history':history, 'confirmed_context':request.context.model_dump(), 'provided_fields':sorted(provided_fields), 'dialogue_state':dialogue.model_dump(), 'today':date.today().isoformat()}
         for attempt in range(2):
             raw = llm.complete_json(UNDERSTAND, payload)
             try:
@@ -83,11 +114,52 @@ def run_policy(request: PolicyQuestion, db, embedder, manager, llm, kb_ids: list
                 payload = {**payload, 'format_retry': {
                     'instruction':'上次输出未通过结构校验。请重新分析原问题并严格遵守 JSON 字段类型；仅对当前分支填写必要字段。',
                     'issues':issues}}
+        if decision.supported and decision.needs_clarification:
+            complete_standard = explicit_standard_question(resolved_input)
+            applicability = explicit_applicability_question(resolved_input)
+            repeated_confirmation = bool(resolved_confirmation and request.history and
+                same_clarification(decision.clarification or '', request.history[-1].content))
+            if complete_standard or applicability or repeated_confirmation:
+                decision.needs_clarification = False
+                decision.clarification = None
+                decision.query = resolved_input
+                if trace: trace('clarification_guard', {'reason':'explicit_standard' if complete_standard else 'document_applicability' if applicability else 'confirmed_condition'})
+        if decision.supported and decision.needs_clarification:
+            refined=remaining_clarification(decision.clarification or '',provided_fields,decision.missing_fields)
+            if refined is None:
+                # If only known fields were requested, ask the unresolved benefit category
+                # for broad eligibility questions, otherwise retrieve with user context.
+                if 'benefit' not in provided_fields:
+                    decision.clarification='请问您想了解哪类补贴或保障，例如养老服务补贴、失能护理补贴或长期护理保险？'
+                    decision.missing_fields=['benefit']
+                else:
+                    decision.needs_clarification=False
+                    user_context='\n'.join(turn.content for turn in request.history if turn.role=='user')
+                    decision.query=(user_context+'\n'+request.question)[-1000:]
+            else:
+                decision.clarification=refined
+                decision.missing_fields=[field for field in decision.missing_fields if field not in provided_fields]
+            if trace: trace('clarification_fields',{'provided_fields':sorted(provided_fields),'missing_fields':decision.missing_fields})
+        if decision.supported and decision.needs_clarification:
+            if dialogue.region and dialogue.benefit:
+                decision.needs_clarification=False
+                decision.clarification=None
+                decision.query=resolved_input
+                if trace: trace('clarification_budget',{'reason':'region_and_benefit_ready_answer_first'})
+            else:
+                missing=[]
+                if not dialogue.region: missing.append('咨询地区（城市）')
+                if not dialogue.benefit: missing.append('想了解的补贴或保障类别')
+                decision.clarification='请问'+ '、'.join(missing)+'？'
         if decision.supported and not decision.needs_clarification and not request.history:
             proposed=decision.query
-            decision.query=request.question
-            decision.needs_freshness=bool(re.search(r'最新|现行|有效|废止|后续调整|目前|现在|今天|刚发布|新出台',request.question)) or any(int(year)>=date.today().year for year in re.findall(r'20\d{2}',request.question))
+            decision.query=effective_question()
+            decision.needs_freshness=bool(re.search(r'最新|现行|当前|有效|废止|后续调整|目前|现在|今天|刚发布|新出台',request.question)) or any(int(year)>=date.today().year for year in re.findall(r'20\d{2}',request.question))
             if trace: trace('query_scope',{'proposed':proposed,'effective':decision.query,'strategy':'standalone_original'})
+        if (resolved_followup or resolved_confirmation or resolved_input!=request.question) and decision.supported and not decision.needs_clarification:
+            decision.query = resolved_input
+        if request.history and request.context.model_dump(exclude_defaults=True) and decision.query:
+            decision.query=effective_question(decision.query)
         if trace: trace('understanding',decision.model_dump())
         return {'decision':decision, 'steps':['understand']}
 
@@ -117,7 +189,7 @@ def run_policy(request: PolicyQuestion, db, embedder, manager, llm, kb_ids: list
         messages = {
             'no_vectors':'政策顾问当前知识范围内没有与当前向量模型匹配的已入库片段。请确认文档已完成向量入库，并核对知识库范围和模型配置。',
             'no_hits':'已执行混合检索，但未召回相关片段。请查看检索记录，核对问题关键词和文档知识范围。',
-            'model_insufficient':'已检索到相关片段，但模型判断这些片段不足以支持所问结论。右侧仍可查看检索结果；可明确具体补贴类别，或核对片段是否包含所需条件和标准。',
+            'model_insufficient':gap_message(requested_gaps(state['decision'].query or resolved_input)),
             'invalid_output':'已检索到资料，但模型回答格式未通过校验，暂未展示草稿。请重试；这不代表知识库没有资料。',
             'invalid_citations':'已检索到资料，但模型的引用编号或引用格式未通过校验，暂未展示草稿。请重试；这不代表检索没有结果。',
         }
@@ -125,7 +197,7 @@ def run_policy(request: PolicyQuestion, db, embedder, manager, llm, kb_ids: list
 
     def wants_freshness(state):
         text = request.question + ' ' + (state['decision'].query or '')
-        return state['decision'].needs_freshness or bool(re.search(r'最新|现行|仍.{0,2}有效|还.{0,2}有效|是否有效|有没有更新|有无调整|废止|现在.*政策', text))
+        return state['decision'].needs_freshness or bool(re.search(r'最新|现行|当前|仍.{0,2}有效|还.{0,2}有效|是否有效|有没有更新|有无调整|废止|现在.*政策', text))
 
     def web_search(state):
         from app.services.web.tavily import WebSearchError
@@ -133,21 +205,49 @@ def run_policy(request: PolicyQuestion, db, embedder, manager, llm, kb_ids: list
         if web is None or not web.configured:
             return {**update, 'web_status':'not_configured', 'web_sources':[], 'web_warning':'联网搜索尚未配置 TAVILY_API_KEY，本次未完成网络核验。'}
         try:
+            search_query=focused_query(state['decision'].query,dialogue,wants_freshness(state))
+            if trace: trace('web_query_plan',{'original':state['decision'].query,'effective':search_query})
             diagnostic = None
             if hasattr(web, 'search_with_diagnostics'):
-                report = web.search_with_diagnostics(state['decision'].query)
+                from app.services.web.tavily import TavilySearch
+                report = web.search_with_diagnostics(search_query, bypass_cache=wants_freshness(state)) if isinstance(web,TavilySearch) else web.search_with_diagnostics(search_query)
                 sources, diagnostic = report.sources, report.diagnostics
             else:
-                sources = web.search(state['decision'].query)
-            return {**update, 'web_diagnostics':diagnostic, 'web_sources':sources, 'web_status':'success' if sources else 'no_results',
+                sources = web.search(search_query)
+            return {**update, 'web_query':search_query,'web_diagnostics':diagnostic, 'web_sources':sources, 'web_status':'success' if sources else 'no_results',
                     'web_warning':None if sources else '联网搜索未取得可用的官方网页正文，本次未完成网络核验。'}
         except WebSearchError as error:
             return {**update, 'web_sources':[], 'web_status':'error', 'web_diagnostics':error.diagnostics, 'web_warning':str(error)}
 
+    def can_refine_web(state):
+        from app.services.web.tavily import TavilySearch
+        return bool(isinstance(web,TavilySearch) and state.get('web_status')=='success'
+                    and state.get('web_diagnostics') and state.get('web_query')
+                    and web.remaining_queries(state['web_query'],state['web_diagnostics']))
+
+    def web_refine(state):
+        from app.services.web.tavily import WebSearchError
+        update={'steps':state['steps']+['web_refine'],'web_refine_found':False}
+        old_urls={source.url for source in state.get('web_sources',[])}
+        try:
+            report=web.refine_with_diagnostics(state['web_query'],state.get('web_sources',[]),state['web_diagnostics'])
+            found=any(source.url not in old_urls for source in report.sources)
+            if trace: trace('answer_aware_search',{'new_source_found':found,'rounds':len(report.diagnostics.attempts)})
+            return {**update,'web_refine_found':found,'web_sources':report.sources,'web_diagnostics':report.diagnostics}
+        except WebSearchError as error:
+            return {**update,'web_status':'error','web_warning':str(error),'web_diagnostics':error.diagnostics}
+
+    def after_validate(state):
+        if state.get('status')=='answered': return 'verify_grounding'
+        if state.get('reason')=='model_insufficient':
+            if not state.get('web_attempted'): return 'web_search'
+            if can_refine_web(state): return 'web_refine'
+        return END
+
     def evidence_for(state):
-        local = [{'index':i, 'kind':'local', 'document':hit.doc_name, 'source':hit.source, 'text':hit.text, 'coverage':'chunk', 'completeness_verified':False} for i, hit in enumerate(state.get('hits',[]), 1)]
+        local = [{'index':i, 'kind':'local', 'document':hit.doc_name, 'source':hit.source, 'heading':hit.heading, 'policy_metadata':hit.policy_metadata.model_dump(mode='json') if hit.policy_metadata else None, 'text':hit.text, 'coverage':'chunk', 'completeness_verified':False} for i, hit in enumerate(state.get('hits',[]), 1)]
         remote = [{'index':len(local)+i, 'kind':'web', 'document':item.title, 'url':item.url,
-                   'published_date':item.published_date, 'retrieved_at':item.retrieved_at, 'text':item.content,
+                   'search_scope':item.search_scope,'search_query':item.search_query,'published_date':item.published_date, 'retrieved_at':item.retrieved_at, 'text':item.content,
                    'coverage':item.coverage, 'is_truncated':item.is_truncated, 'original_content_chars':item.original_content_chars,
                    'excerpt_start':item.excerpt_start, 'completeness_verified':False}
                   for i, item in enumerate(state.get('web_sources',[]),1)]
@@ -155,23 +255,34 @@ def run_policy(request: PolicyQuestion, db, embedder, manager, llm, kb_ids: list
 
     def generate(state):
         evidence = evidence_for(state)
-        payload = {'question':state['decision'].query, 'user_question':request.question, 'evidence':evidence, 'today':date.today().isoformat(),
+        payload = {'question':state['decision'].query, 'user_question':resolved_input, 'confirmed_context':request.context.model_dump(), 'evidence':evidence, 'today':date.today().isoformat(),
                    'freshness_requested':wants_freshness(state), 'web_status':state.get('web_status','not_used'),
                    'web_warning':state.get('web_warning')}
         for attempt in range(2):
             draft = llm.complete_json(GENERATE, payload)
             try:
                 parsed = Draft.model_validate(draft)
+                if not parsed.sufficient and parsed.paragraphs:
+                    # Salvage only candidates, never bypass numeric/citation/semantic checks.
+                    parsed=parsed.model_copy(update={'sufficient':True,'coverage':'partial'})
+                    draft=parsed.model_dump()
+                    if trace: trace('partial_candidates',{'paragraph_count':len(parsed.paragraphs)})
                 if parsed.sufficient:
-                    cleaned=[remove_extra_calculation(p,evidence) for p in parsed.paragraphs]
+                    cleaned=[remove_extra_calculation(p,evidence,user_ages=user_ages) for p in parsed.paragraphs]
                     if cleaned!=parsed.paragraphs:
                         if trace: trace('calculation_removed',{'before':parsed.model_dump(),'after':[p.model_dump() for p in cleaned]})
                         parsed=parsed.model_copy(update={'paragraphs':cleaned})
                         draft=parsed.model_dump()
+                    corrected=[remove_denied_user_amount(p,evidence,resolved_input,user_ages=user_ages) for p in parsed.paragraphs]
+                    if corrected!=parsed.paragraphs:
+                        if trace: trace('denied_user_amount_removed',{'before':parsed.model_dump(),'after':[p.model_dump() for p in corrected]})
+                        parsed=parsed.model_copy(update={'paragraphs':corrected})
+                        draft=parsed.model_dump()
                     if not parsed.paragraphs: raise ValueError('empty_paragraphs')
-                    numeric_issues=numeric_support_issues(parsed.paragraphs,evidence)
+                    numeric_issues=numeric_support_issues(parsed.paragraphs,evidence,user_ages=user_ages)
                     if numeric_issues:
                         if trace: trace('generation_numeric_rejection',{'attempt':attempt+1,'issues':numeric_issues,'draft':draft})
+                        payload={**payload,'numeric_retry':{'issues':numeric_issues,'instruction':'只保留引用原文支持的金额和政策分档；否定用户错误金额时用“不是”即可，不再复述该数字。用户年龄可匹配原文明确区间，不可改成新门槛。'}}
                         raise ValueError('unsupported_numeric_expansion')
                     for paragraph in parsed.paragraphs:
                         if not paragraph.text.strip() or re.search(r'【.*?】', paragraph.text): raise ValueError('citation_format')
@@ -191,8 +302,11 @@ def run_policy(request: PolicyQuestion, db, embedder, manager, llm, kb_ids: list
             draft = Draft.model_validate(state['draft'])
             if not draft.sufficient: return insufficient(state, 'model_insufficient')
             if not draft.paragraphs: return insufficient(state, 'invalid_output')
-            if numeric_support_issues(draft.paragraphs,evidence_for(state)):
+            numeric_issues=numeric_support_issues(draft.paragraphs,evidence_for(state),user_ages=user_ages)
+            if numeric_issues:
                 result=insufficient(state,'invalid_output')
+                logger.warning('Policy numeric validation blocked issues=%s',numeric_issues)
+                result['answer_checks']={'status':'blocked','checked_paragraphs':len(draft.paragraphs),'accepted_paragraphs':0,'issues':[f"generation_{item['type']}:paragraph_{item['paragraph']}" for item in numeric_issues]}
                 result.update(reason='unsupported_numeric_expansion',answer='草稿新增了引用原文中未直接列出的年龄或金额，修正后仍未通过检查，暂不展示。可查看右侧原文，不应据此认为知识库没有资料。')
                 return result
             used = set()
@@ -226,7 +340,7 @@ def run_policy(request: PolicyQuestion, db, embedder, manager, llm, kb_ids: list
         draft = Draft.model_validate(state['draft'])
         candidates = [p for p in draft.paragraphs if not unsupported_validity_claim(p.text) and not evidence_scope_issues(p.text,[item for item in evidence_for(state) if item['index'] in p.sources])]
         evidence = evidence_for(state)
-        payload = {'question':state['decision'].query, 'user_question':request.question, 'paragraphs':[
+        payload = {'question':state['decision'].query, 'user_question':resolved_input, 'user_provided_ages':sorted(user_ages), 'paragraphs':[
             {'paragraph':i,'text':p.text,'sources':p.sources} for i,p in enumerate(candidates,1)],
             'evidence':[item for item in evidence if any(item['index'] in p.sources for p in candidates)]}
         for item in payload['evidence']: item['spans']=evidence_spans(item['text'])
@@ -274,20 +388,40 @@ def run_policy(request: PolicyQuestion, db, embedder, manager, llm, kb_ids: list
                 'steps':state['steps']+['verify_grounding']}
 
     graph = StateGraph(State)
-    for name, node in [('understand',understand), ('clarify',clarify), ('retrieve',retrieve), ('insufficient',insufficient), ('generate',generate), ('validate',validate), ('web_search',web_search), ('verify_grounding',verify_grounding)]:
-        graph.add_node(name, node)
+    for name, node in [('understand',understand), ('clarify',clarify), ('retrieve',retrieve), ('insufficient',insufficient), ('generate',generate), ('validate',validate), ('web_search',web_search), ('web_refine',web_refine), ('verify_grounding',verify_grounding)]:
+        def with_progress(state, _name=name, _node=node):
+            if progress: progress(_name)
+            return _node(state)
+        graph.add_node(name, metrics.measure_node(name, with_progress))
     graph.add_edge(START, 'understand')
     graph.add_conditional_edges('understand', route, {'clarify':'clarify', 'retrieve':'retrieve'})
     graph.add_conditional_edges('retrieve', lambda s:'web_search' if wants_freshness(s) or not s['hits'] else 'generate', {'generate':'generate', 'web_search':'web_search'})
     graph.add_conditional_edges('web_search', lambda s:'generate' if s.get('web_sources') or (s.get('hits') and not s.get('draft')) else 'insufficient',
                                 {'generate':'generate', 'insufficient':'insufficient'})
     graph.add_edge('generate','validate')
-    graph.add_conditional_edges('validate', lambda s:'verify_grounding' if s.get('status')=='answered' else ('web_search' if s.get('reason')=='model_insufficient' and not s.get('web_attempted') else END),
-                                {'verify_grounding':'verify_grounding', 'web_search':'web_search', END:END})
+    graph.add_conditional_edges('validate', after_validate,
+                                {'verify_grounding':'verify_grounding', 'web_search':'web_search', 'web_refine':'web_refine', END:END})
+    graph.add_conditional_edges('web_refine',lambda s:'generate' if s.get('web_refine_found') else 'insufficient',{'generate':'generate','insufficient':'insufficient'})
     graph.add_edge('verify_grounding',END)
     for terminal in ['clarify','insufficient']: graph.add_edge(terminal, END)
-    state = graph.compile().invoke({})
-    return PolicyAnswer(answer_checks=state.get('answer_checks'),policy_categories=state.get('policy_categories',[]),status=state['status'], answer=state['answer'], citations=state.get('citations',[]),
+    try:
+        state = graph.compile().invoke({})
+    finally:
+        logger.info('Policy execution metrics=%s', metrics.snapshot())
+    try: draft_meta=Draft.model_validate(state['draft']) if state.get('draft') else None
+    except ValidationError: draft_meta=None
+    targets=requested_gaps(state.get('decision').query or resolved_input)
+    gaps=[key for key in (draft_meta.missing_topics if draft_meta else []) if key in targets or key=='full_policy_scope']
+    partial=state['status']=='answered' and bool(gaps or (draft_meta and draft_meta.coverage=='partial') or (state.get('answer_checks') or {}).get('status')=='partial')
+    if partial and not gaps: gaps=targets if draft_meta and draft_meta.coverage=='partial' else ['full_policy_scope']
+    if state['status']=='insufficient' and not gaps: gaps=targets
+    # Internal validation failures remain visible as failures, not as benign source gaps.
+    source_gap=state.get('reason') in {'model_insufficient','no_hits','no_vectors'}
+    if partial: state['answer']+='\n\n'+gap_message(gaps,partial=True)
+    if state['status']=='insufficient' and source_gap:
+        state['answer']=gap_message(gaps)+(('\n\n'+state['web_warning']) if state.get('web_warning') else '')
+    general_info=concept_help((state.get('decision').query or resolved_input)) if partial or (state['status']=='insufficient' and source_gap) else []
+    return PolicyAnswer(coverage='partial' if partial else 'complete' if state['status']=='answered' else 'none',missing_topics=gaps,general_info=general_info,dialogue_state=dialogue,consultation_context=request.context,metrics=metrics.snapshot(),answer_checks=state.get('answer_checks'),policy_categories=state.get('policy_categories',[]),status=state['status'], answer=state['answer'], citations=state.get('citations',[]),
         web_diagnostics=state.get('web_diagnostics'), web_sources=state.get('web_sources',[]), web_status=state.get('web_status','not_used'), web_warning=state.get('web_warning'),
         retrieved_hits=state.get('hits',[]), vector_count=state.get('vector_count',0), reason=state.get('reason'),
         retrieval_log_id=state.get('log_id'), model=llm.model, knowledge_scope=kb_ids, steps=state['steps'])

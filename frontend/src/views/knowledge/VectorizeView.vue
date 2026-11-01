@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppSelect from '../../components/common/AppSelect.vue'
 import { computed,onMounted,onBeforeUnmount,watch,ref } from 'vue'
 import { useKnowledgeStore } from '../../stores/knowledge'
 import { useVectorStore } from '../../stores/vectors'
@@ -31,9 +32,9 @@ onBeforeUnmount(()=>{disposed=true;clearInterval(timer)})
 <div v-if="store.error" class="knowledge-error" role="alert"><span>{{store.error}}</span><button class="btn sm" @click="initialize">重新加载</button></div>
 <div v-if="loading" class="card knowledge-loading" role="status">正在加载入库信息…</div>
 <div v-else-if="!docs.length&&!store.error" class="card"><EmptyState icon="database" title="还没有可入库的文本块" description="请先上传文档并保存切块结果。"><RouterLink class="btn primary" to="/chunk">去切块</RouterLink></EmptyState></div>
-<div v-else class="split-2"><div class="card cfg-card"><div class="field"><label for="vecDoc">选择文档</label><select id="vecDoc" v-model="knowledge.selectedDocId" class="select" :disabled="store.active||store.busy"><option v-for="d in docs" :key="d.id" :value="d.id">{{d.name}}（{{d.chunkCount}} 段）</option></select></div>
-<div class="field"><label for="vecModel">Embedding 模型</label><select id="vecModel" class="select" disabled><option v-for="m in store.models" :key="m.id">{{m.name||'尚未配置'}} · {{m.dimensions}} 维</option></select><div class="hint">使用后端已配置的模型。更换模型、服务或维度后需重新入库。</div><p v-if="model&&!model.configured" class="document-error">{{model.hint}}</p></div>
-<div class="field"><label for="vecBatch">批次大小</label><select id="vecBatch" v-model.number="store.batch" class="select" :disabled="store.active||store.busy"><option v-for="n in [8,16,32]" :key="n" :value="n">{{n}} 条 / 批</option></select></div>
+<div v-else class="split-2"><div class="card cfg-card"><div class="field"><label for="vecDoc">选择文档</label><AppSelect id="vecDoc" v-model="knowledge.selectedDocId" class="select" :disabled="store.active||store.busy"><option v-for="d in docs" :key="d.id" :value="d.id">{{d.name}}（{{d.chunkCount}} 段）</option></AppSelect></div>
+<div class="field"><label for="vecModel">Embedding 模型</label><AppSelect id="vecModel" class="select" disabled><option v-for="m in store.models" :key="m.id">{{m.name||'尚未配置'}} · {{m.dimensions}} 维</option></AppSelect><div class="hint">使用后端已配置的模型。更换模型、服务或维度后需重新入库。</div><p v-if="model&&!model.configured" class="document-error">{{model.hint}}</p></div>
+<div class="field"><label for="vecBatch">批次大小</label><AppSelect id="vecBatch" v-model.number="store.batch" class="select" :disabled="store.active||store.busy"><option v-for="n in [8,16,32]" :key="n" :value="n">{{n}} 条 / 批</option></AppSelect></div>
 <div class="hint-box"><AppIcon name="info" :size="14"/><div>保存新切块后需要重新入库。执行期间采用单写者保护，完成后才发布新的索引版本。</div></div>
 <button class="btn primary block lg" :disabled="!doc||!model?.configured||store.busy||store.active||store.rebuilding" @click="store.start"><AppIcon name="database" :size="15"/>{{store.active?'正在处理…':store.busy?'正在提交…':doc?.status==='vectorized'?'重新向量化':'开始向量入库'}}</button>
 <div class="hint" style="text-align:center;margin-top:8px">当前文档已保存 {{doc?.vectorCount||0}} / {{doc?.chunkCount||0}} 条向量</div>

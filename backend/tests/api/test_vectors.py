@@ -57,6 +57,8 @@ def test_real_faiss_search_scope_and_persistent_history(vectors):
     api,model,manager,factory=vectors
     dining=document(api,'社区助餐可以到食堂窗口登记。' * 12,'助餐资料.txt')
     safety=document(api,'预防跌倒应安装扶手和防滑设施。' * 12,'安全资料.txt')
+    metadata={'regions':['杭州市'],'published_on':'2024-12-26','effective_on':'2025-01-27'}
+    assert api.put(f'/api/documents/{dining}/policy',json=metadata).status_code==200
     first=embed(api,dining);second=embed(api,safety)
     assert first['status']=='succeeded' and second['status']=='succeeded'
     assert first['index_version']==1 and second['index_version']==2
@@ -66,6 +68,8 @@ def test_real_faiss_search_scope_and_persistent_history(vectors):
     assert result.status_code==200,result.text
     data=result.json();assert data['hits'] and all(h['doc_id']==dining for h in data['hits'])
     assert all(0 < h['score'] <= 2/61 and h['text'] and h['end']-h['start']==h['chars'] for h in data['hits'])
+    assert data['hits'][0]['policy_metadata']['effective_on']=='2025-01-27'
+    assert data['hits'][0]['context_expanded']
     assert data['strategy']=='bm25_rrf'
     assert all(h['bm25_score'] > 0 and h['semantic_rank'] and h['bm25_rank'] for h in data['hits'])
     scoped=api.post('/api/retrieval/search',json={'query':'助餐','scope':safety,'threshold':.12}).json()

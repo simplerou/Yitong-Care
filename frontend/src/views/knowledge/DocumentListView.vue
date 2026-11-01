@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AppSelect from '../../components/common/AppSelect.vue'
 import { onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { useKnowledgeStore } from '../../stores/knowledge'
 import AppBreadcrumb from '../../components/layout/AppBreadcrumb.vue'
@@ -34,7 +35,7 @@ onBeforeUnmount(() => clearInterval(timer))
       </div>
     </div>
     <div class="upload-metadata">
-      <label>存入知识库<select v-model="kbId" class="select" :disabled="store.uploading"><option v-if="!store.bases.length" value="general">通用知识库</option><option v-for="base in store.bases" :key="base.id" :value="base.id">{{ base.name }}</option></select></label>
+      <label>存入知识库<AppSelect v-model="kbId" class="select" :disabled="store.uploading"><option v-if="!store.bases.length" value="general">通用知识库</option><option v-for="base in store.bases" :key="base.id" :value="base.id">{{ base.name }}</option></AppSelect></label>
       <label>资料来源<input v-model="source" class="input" maxlength="512" :disabled="store.uploading" placeholder="例如：社区服务中心"></label>
     </div>
     <UploadDropzone ref="upload" :kb-id="kbId" :source="source" />

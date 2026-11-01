@@ -1,5 +1,6 @@
 from typing import Literal
 from pydantic import BaseModel, Field, field_validator
+from app.schemas.policy import ConsultationContext, DialogueState, Gap
 from app.schemas.retrieval import SearchHit
 
 
@@ -9,6 +10,8 @@ class ChatTurn(BaseModel):
 
 
 class PolicyQuestion(BaseModel):
+    dialogue_state: DialogueState | None = None
+    context: ConsultationContext = Field(default_factory=ConsultationContext)
     question: str = Field(min_length=1, max_length=1000)
     history: list[ChatTurn] = Field(default_factory=list, max_length=6)
 
@@ -20,6 +23,8 @@ class PolicyQuestion(BaseModel):
 
 
 class WebSource(BaseModel):
+    search_scope: Literal['requested','city_fallback'] = 'requested'
+    search_query: str | None = None
     original_content_chars: int | None = None
     excerpt_start: int | None = None
     is_truncated: bool | None = None
@@ -33,13 +38,30 @@ class WebSource(BaseModel):
 
 
 class WebPageDiagnostic(BaseModel):
+    search_query: str | None = None
     title: str
     url: str
     outcome: Literal['accepted', 'rejected']
     reason: str
 
 
+class WebSearchAttempt(BaseModel):
+    query: str
+    stage: str
+    search_count: int = 0
+    official_count: int = 0
+    extraction_requested: int = 0
+    extraction_returned: int = 0
+    body_count: int = 0
+    accepted_count: int = 0
+    rejected_counts: dict[str,int] = Field(default_factory=dict)
+
+
 class WebDiagnostics(BaseModel):
+    attempts: list[WebSearchAttempt] = Field(default_factory=list)
+
+    search_query: str | None = None
+    cache_hit: bool = False
     stage: str = 'not_started'
     search_count: int = 0
     official_count: int = 0
@@ -66,7 +88,24 @@ class AnswerChecks(BaseModel):
     issues: list[str] = Field(default_factory=list)
 
 
+class ExecutionMetrics(BaseModel):
+    usage_calls: int = Field(default=0, ge=0)
+    prompt_tokens: int | None = Field(default=None, ge=0)
+    completion_tokens: int | None = Field(default=None, ge=0)
+    total_ms: float = Field(ge=0)
+    stage_ms: dict[str, float] = Field(default_factory=dict)
+    llm_calls: int = Field(ge=0)
+    llm_failures: int = Field(ge=0)
+    llm_ms: float = Field(ge=0)
+
+
 class PolicyAnswer(BaseModel):
+    coverage: Literal['complete','partial','none'] | None = None
+    missing_topics: list[Gap] = Field(default_factory=list)
+    general_info: list[str] = Field(default_factory=list)
+    dialogue_state: DialogueState | None = None
+    consultation_context: ConsultationContext | None = None
+    metrics: ExecutionMetrics | None = None
     answer_checks: AnswerChecks | None = None
     policy_categories: list[str] = Field(default_factory=list)
     status: Literal['answered', 'clarification', 'insufficient']

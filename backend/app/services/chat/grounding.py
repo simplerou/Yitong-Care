@@ -65,7 +65,7 @@ def payment_cycles(text):
 def evidence_spans(text):
     return [{'span':i+1,'text':text[offset:offset+800]} for i,offset in enumerate(range(0,len(text),640))]
 
-def evaluate_review(review: Review, paragraphs, evidence):
+def evaluate_review(review: Review, paragraphs, evidence, user_ages=()):
     expected=set(range(1,len(paragraphs)+1))
     if len(review.assessments)!=len(paragraphs) or {a.paragraph for a in review.assessments}!=expected:
         raise ValueError('review_coverage')
@@ -97,7 +97,7 @@ def evaluate_review(review: Review, paragraphs, evidence):
                 quoted={q.source_index for q in assessment.quotes}
                 completed=[]
                 def missing(text):
-                    return (amounts(paragraph.text)-amounts(text),ages(paragraph.text)-ages(text),payment_cycles(paragraph.text)-payment_cycles(text))
+                    return (amounts(paragraph.text)-amounts(text),unsupported_ages(paragraph.text,text,user_ages),payment_cycles(paragraph.text)-payment_cycles(text))
                 for index in paragraph.sources:
                     if index in quoted or index not in by_source: continue
                     for span in evidence_spans(by_source[index]['text']):
@@ -109,7 +109,7 @@ def evaluate_review(review: Review, paragraphs, evidence):
                             completed.append(Quote(source_index=index,span_ids=[span['span']]))
                 if completed: assessment=assessment.model_copy(update={'quotes':assessment.quotes+completed})
                 if not amounts(paragraph.text).issubset(amounts(support)): reason='amount_not_in_quote'
-                elif not ages(paragraph.text).issubset(ages(support)): reason='age_not_in_quote'
+                elif unsupported_ages(paragraph.text,support,user_ages): reason='age_not_in_quote'
                 elif not payment_cycles(paragraph.text).issubset(payment_cycles(support)): reason='payment_cycle_mismatch'
         if reason: issues.append(reason)
         else: accepted[assessment.paragraph]=assessment
@@ -150,7 +150,7 @@ def review_with_repair(llm,payload,paragraphs,evidence,trace=None):
         try:
             if trace: trace('grounding_review',{'attempt':attempt+1,'response':raw})
             review=Review.model_validate(raw)
-            accepted,issues=evaluate_review(review,paragraphs,evidence)
+            accepted,issues=evaluate_review(review,paragraphs,evidence,user_ages=payload.get('user_provided_ages',()))
             if trace: trace('grounding_checks',{'attempt':attempt+1,'accepted_paragraphs':list(accepted),'accepted_assessments':[a.model_dump() for a in accepted.values()],'issues':issues})
         except (ValidationError,ValueError) as error:
             code='review_schema_invalid' if isinstance(error,ValidationError) else 'review_coverage_invalid'
@@ -174,20 +174,20 @@ REVIEW_PROMPT += """
 """
 
 
-def numeric_support_issues(paragraphs,evidence):
-    """Reject unquoted arithmetic/age expansions before expensive semantic review."""
+def numeric_support_issues(paragraphs,evidence,user_ages=()):
+    """Reject unsupported amounts and policy ages; allow bounded user-age matching."""
     by_source={item['index']:item['text'] for item in evidence}
     issues=[]
     for number,paragraph in enumerate(paragraphs,1):
         support='\n'.join(by_source.get(i,'') for i in paragraph.sources)
         if not amounts(paragraph.text).issubset(amounts(support)):
             issues.append({'paragraph':number,'type':'amount_not_in_evidence'})
-        if not ages(paragraph.text).issubset(ages(support)):
+        if unsupported_ages(paragraph.text,support,user_ages):
             issues.append({'paragraph':number,'type':'age_not_in_evidence'})
     return issues
 
 
-def remove_extra_calculation(paragraph,evidence):
+def remove_extra_calculation(paragraph,evidence,user_ages=()):
     """Only drop a trailing, unquoted calculation after a supported percentage rule.
 
     This does not verify arithmetic or turn a derived amount into a policy standard.
@@ -204,7 +204,7 @@ def remove_extra_calculation(paragraph,evidence):
     ratios=re.findall(r'\d+(?:\.\d+)?\s*[%％]',head)
     if not ratios or any(normalized(ratio) not in normalized(support) for ratio in ratios): return paragraph
     candidate=paragraph.model_copy(update={'text':head.rstrip('，,；;。')+'。'})
-    if numeric_support_issues([candidate],evidence): return paragraph
+    if numeric_support_issues([candidate],evidence,user_ages=user_ages): return paragraph
     return candidate
 
 REVIEW_PROMPT += """
@@ -217,3 +217,79 @@ coverage=chunk/excerpt/extracted_text只表示提供的上下文类型；complet
 不得据片段中未出现某文件就判定完整目录“未列明”或全文“不包含”。可说明“当前片段不足以确认完整目录是否包含该文件”。
 “面向全体/所有户籍老人”等扩大范围，必须有原文明确覆盖该范围并保留条件；不能把不同政策对象合并成无条件全覆盖。
 """
+
+
+AGE_RANGE = re.compile(r'(\d{1,3})\s*(?:周?岁\s*)?(?:至|到|[-—–~～])\s*(\d{1,3})\s*(?:周)?岁')
+SINGLE_AGE = re.compile(r'(\d{1,3})\s*(?:周)?岁')
+
+
+def unsupported_ages(text, support, user_ages=()):
+    """Allow user ages inside explicit source intervals, never invented policy thresholds.
+
+    Interval membership is only a numeric anchor check. The semantic reviewer still
+    checks that this interval, benefit, amount, geography and conditions belong together.
+    """
+    answer=unicodedata.normalize('NFKC',text)
+    source=unicodedata.normalize('NFKC',support)
+    missing=ages(answer)-ages(source)
+    if not missing: return set()
+    intervals=[(int(m[1]),int(m[2])) for m in AGE_RANGE.finditer(source)
+               if 0<=int(m[1])<=int(m[2])<=130]
+    for match in re.finditer(r'(\d{1,3})\s*(?:周)?岁\s*(?:及以上)',source):
+        if 0<=int(match[1])<=130: intervals.append((int(match[1]),130))
+    for match in re.finditer(r'(\d{1,3})\s*(?:周)?岁\s*(?:及以下|以下)',source):
+        # Only inclusive forms; bare 以下/以上 can be legally ambiguous.
+        if '及以下' in match[0] and 0<=int(match[1])<=130: intervals.append((0,int(match[1])))
+    ranges=list(AGE_RANGE.finditer(answer))
+    protected={int(m[i]) for m in ranges for i in (1,2)}
+    for match in SINGLE_AGE.finditer(answer):
+        before=answer[max(0,match.start()-3):match.start()]
+        after=answer[match.end():match.end()+6]
+        if re.search(r'年满|不满|未满|不足|超过|低于|大于|小于|至少|至多|达到|[≥≤<>]',before) or re.match(r'\s*(?:及?以上|及?以下|起|以内|以外|至|到)',after):
+            protected.add(int(match[1]))
+    eligible=set(user_ages)-protected
+    personal={int(match[1]) for match in re.finditer(r'(?:您|你)(?:提供的年龄|的年龄|所述年龄|提到的年龄|咨询对象的年龄)?(?:今年|目前|现在)?\s*(?:为|是|只有|才|仅)?\s*(\d{1,3})\s*(?:周)?岁',answer)}
+    allowed={age for age in eligible if age in personal or any(low<=age<=high for low,high in intervals)}
+    return missing-allowed
+
+
+REVIEW_PROMPT += "\nuser_provided_ages为用户问题或用户历史明确给出的年龄，仅是个人输入，不是政策事实。原文有80至89周岁分档时，用户85岁可作区间匹配，不因未逐字出现85岁而否决。必须引用真实区间和对应金额、对象、地区原文，禁止把用户年龄改成新政策门槛；不得把落在另一档的年龄套用本档金额。"
+
+
+DENIED_AMOUNT = r'(?:并不是|并非|不是)(?:按)?(?:每人)?(?:每月|每年)?(?:领取|领|发放|补贴)?\s*(\d+(?:\.\d+)?)\s*元(?:[/／](?:月|年))?'
+
+
+def remove_denied_user_amount(paragraph, evidence, user_question, user_ages=()):
+    """Remove a bounded denial clause of an unsupported USER amount, never a positive claim.
+
+    The remaining correction needs original numeric anchors and independent review.
+    No source, amount or policy statement is invented by this transformation.
+    """
+    text=paragraph.text
+    support='\n'.join(item['text'] for item in evidence if item['index'] in paragraph.sources)
+    supplied=amounts(user_question)
+    source_amounts=amounts(support)
+    leading=re.match(r'^\s*'+DENIED_AMOUNT+r'[，,。；;]\s*(?:而是|应为|实际为)?',text)
+    trailing=re.search(r'[，,；;]\s*(?:而非|并非|不是)\s*(?:每人)?(?:每月|每年)?(?:领取|领)?\s*(\d+(?:\.\d+)?)\s*元(?=[。；;]|$)',text)
+    if leading:
+        value=Decimal(leading[1]);remaining=text[leading.end():].strip()
+        replacement='不是。'+remaining
+    elif trailing:
+        value=Decimal(trailing[1]);remaining=(text[:trailing.start()]+text[trailing.end():]).strip()
+        replacement=remaining.rstrip('。')+'。'
+    else: return paragraph
+    if value not in supplied or value in source_amounts or not remaining: return paragraph
+    # Require a supported positive amount after removing the denial; no silent empty answer.
+    if not amounts(remaining) or not amounts(remaining).issubset(source_amounts): return paragraph
+    candidate=paragraph.model_copy(update={'text':replacement})
+    if numeric_support_issues([candidate],evidence,user_ages=user_ages): return paragraph
+    return candidate
+
+
+REVIEW_PROMPT += "\n地区范围核实问答中，用户问外地户籍能否直接套用文件所列地区标准，回答若依据原文明确范围说明‘仅凭该条款不能认定可以套用’，不应只因用户地区与文件地区不同而判region_mismatch。仍须拒绝将所列标准直接推广到外地、虚构当地金额或断言外地老人不能领取任何补贴；边界解释不是跨地区资格认证。"
+
+
+REVIEW_PROMPT += "\n用户个人输入与政策依据分开：user_provided_ages内的22岁等年龄可作为用户事实复述，原文无需也写22岁。若回答据原文80周岁以上条件解释该年龄低于该文件要求，应核对比较关系、文件地区、制度类别及限定，不因摘录没有22岁而误判。但不得从某一高龄津贴门槛推导所有养老保障不适用，也不能把旧年文件认证为龙湾区今日资格结论。"
+
+
+REVIEW_PROMPT += "\nsearch_scope=city_fallback的来源属于市级/部门补搜，不等于区县适用性已核实。检查答案是否保留文件原文范围，不能把市级补搜材料直接当成所问区县当前完整目录或个人资格依据。"

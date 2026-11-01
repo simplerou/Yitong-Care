@@ -1,3 +1,5 @@
+from typing import Literal
+from app.schemas.policy import Gap
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -9,5 +11,7 @@ class Paragraph(BaseModel):
 
 class Draft(BaseModel):
     model_config = ConfigDict(strict=True, extra='forbid')
+    coverage: Literal['complete','partial'] = 'complete'
+    missing_topics: list[Gap] = Field(default_factory=list, max_length=6)
     sufficient: bool
     paragraphs: list[Paragraph] = Field(max_length=8)

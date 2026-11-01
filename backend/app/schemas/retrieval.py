@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 from typing import Literal
+from app.schemas.policy import PolicyMetadata
 from pydantic import BaseModel, Field, field_serializer, field_validator
 
 
@@ -17,6 +18,11 @@ class SearchRequest(BaseModel):
 
 
 class SearchHit(BaseModel):
+    policy_metadata: PolicyMetadata | None = None
+    matched_start: int | None = None
+    matched_end: int | None = None
+    context_expanded: bool = False
+    heading: str | None = None
     chunk_id: int
     doc_id: str
     kb_id: str

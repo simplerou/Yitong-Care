@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, ForeignKey, Index, String
+from sqlalchemy import BigInteger, ForeignKey, Index, String, JSON
 from sqlalchemy.dialects.mysql import LONGTEXT
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -11,6 +11,8 @@ class KnowledgeDocument(TimestampMixin, Base):
         Index("ix_knowledge_document_kb_status", "kb_id", "status"),
         MYSQL_TABLE_OPTIONS,
     )
+
+    policy_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     kb_id: Mapped[str] = mapped_column(

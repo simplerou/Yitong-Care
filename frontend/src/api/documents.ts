@@ -1,7 +1,14 @@
 import { request } from './http'
 import type { ChunkDto } from './chunks'
 
+export interface PolicyMetadata {
+ issuer:string;document_number:string;regions:string[];category:string;audience:string
+ published_on:string|null;effective_on:string|null;expires_on:string|null
+ validity:'unknown'|'effective'|'repealed'|'expired';verification_source:string;verified_on:string|null
+ amends:string[];replaces:string[];notes:string
+}
 export interface DocumentDto {
+  policy_metadata?:PolicyMetadata|null
   id: string; kb_id: string; name: string; type: string; size: number; source: string | null
   status: string; error_message: string | null; chunk_count: number; vector_count: number
   created_at: string; updated_at: string
@@ -15,6 +22,7 @@ export const documentsApi = {
   list(q = '', page = 1, pageSize = 20) {
     return request<DocumentPage>(`/documents?${new URLSearchParams({ q, page: String(page), page_size: String(pageSize) })}`)
   },
+  savePolicy:(id:string,metadata:PolicyMetadata)=>request<DocumentDto>(`/documents/${encodeURIComponent(id)}/policy`,{method:'PUT',body:JSON.stringify(metadata)}),
   bases: () => request<KnowledgeBase[]>('/knowledge-bases'),
   detail: (id: string) => request<DocumentDetailDto>(`/documents/${encodeURIComponent(id)}`),
   upload(file: File, kbId: string, source: string) {

@@ -34,6 +34,8 @@ class QwenClient:
                 if response.status_code != 200:
                     raise BusinessError(f'聊天模型返回 HTTP {response.status_code}，请检查模型权限、额度和服务地址。', 502)
                 data = response.json()
+                from app.services.chat.metrics import record_usage
+                if isinstance(data, dict): record_usage(data.get('usage'))
                 choice = data['choices'][0]
                 if choice.get('finish_reason') != 'stop': raise ValueError('incomplete response')
                 result = json.loads(choice['message']['content'])

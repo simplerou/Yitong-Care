@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     llm_api_key: SecretStr = SecretStr("")
     llm_model: str = ""
     llm_timeout_seconds: int = Field(default=60, ge=1, le=300)
+    tavily_fallback_searches: int = Field(default=2, ge=0, le=2)
+    tavily_cache_ttl_seconds: int = Field(default=300, ge=0, le=600)
     tavily_api_key: SecretStr = SecretStr("")
     tavily_extract_timeout_seconds: int = Field(default=60, ge=1, le=180)
     tavily_timeout_seconds: int = Field(default=20, ge=1, le=60)

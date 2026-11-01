@@ -64,7 +64,7 @@ def summary(db: Session, doc: KnowledgeDocument) -> DocumentSummary:
         func.count(DocumentChunk.embedding),
     ).where(DocumentChunk.doc_id == doc.id)).one()
     return DocumentSummary(
-        id=doc.id, kb_id=doc.kb_id, name=doc.name, type=doc.type, size=doc.size,
+        policy_metadata=doc.policy_metadata, id=doc.id, kb_id=doc.kb_id, name=doc.name, type=doc.type, size=doc.size,
         source=doc.source, status=doc.status, error_message=doc.error_message,
         chunk_count=count, vector_count=vectors if doc.status == "vectorized" else 0,
         created_at=doc.created_at, updated_at=doc.updated_at,

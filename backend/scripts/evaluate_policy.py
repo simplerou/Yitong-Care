@@ -16,6 +16,7 @@ from app.core.exceptions import BusinessError
 from app.db.session import SessionLocal
 from app.models import KnowledgeDocument, DocumentChunk, VectorIndex
 from app.agents.orchestrator import run_policy
+from app.services.chat.dialogue_state import build_dialogue
 from app.services.chat.llm import get_llm
 from app.services.embedding.openai_compatible import get_embedder
 from app.services.vectorstore.index_manager import get_index_manager
@@ -76,7 +77,7 @@ def main(argv=None):
     for case in selected:
         report['results'].append({'id':case.id,'topic':case.topic,'automatic_status':'not_run','manual_status':'not_run',
             'manual_checks':case.manual_checks,'reference_pages':case.reference_pages,'reference_quotes':case.reference_quotes,'turns':[]})
-    paths=['app/agents/orchestrator.py','app/services/chat/prompt_builder.py','app/services/chat/grounding.py','app/services/chat/policy_checks.py','app/services/chat/evidence_limits.py','app/services/retrieval/hybrid.py','app/services/web/tavily.py','app/evaluation/policy.py','scripts/evaluate_policy.py']
+    paths=['app/agents/orchestrator.py','app/services/chat/prompt_builder.py','app/services/chat/grounding.py','app/services/chat/policy_checks.py','app/services/chat/evidence_limits.py','app/services/retrieval/hybrid.py','app/services/web/tavily.py','app/evaluation/policy.py','app/services/retrieval/context.py','app/services/web/cache.py','app/services/chat/metrics.py','app/schemas/policy.py','app/services/chat/clarification.py','app/services/chat/dialogue_state.py','app/services/chat/answer_scope.py','app/services/web/query_plan.py','app/services/chat/citation.py','scripts/evaluate_policy.py']
     report['code_hashes']={name:sha256((BACKEND_DIR/name).read_bytes()).hexdigest() for name in paths}
     try:
         report['git_commit']=subprocess.check_output(['git','rev-parse','HEAD'],cwd=BACKEND_DIR,text=True,stderr=subprocess.DEVNULL).strip()
@@ -111,12 +112,13 @@ def main(argv=None):
             if case.mode=='web' and not web.configured:
                 row.update(automatic_status='blocked',error='Tavily Key未配置，联网用例未执行。');continue
             case_web=web if case.mode=='web' else LocalOnly()
-            history=[];started=perf_counter();checks=[]
+            history=[];dialogue=None;started=perf_counter();checks=[]
             try:
                 for i,question in enumerate(case.turns):
                     events=[]
+                    dialogue=build_dialogue([question],dialogue)
                     with SessionLocal() as db:
-                        response=run_policy(PolicyQuestion(question=question,history=history[-6:]),db,embedder,manager,llm,settings.policy_kb_ids,web=case_web,trace=lambda stage,data:events.append({'stage':stage,'data':data}))
+                        response=run_policy(PolicyQuestion(question=question,history=history[-6:],dialogue_state=dialogue),db,embedder,manager,llm,settings.policy_kb_ids,web=case_web,trace=lambda stage,data:events.append({'stage':stage,'data':data}))
                     row['turns'].append({'question':question,'response':response.model_dump(mode='json'),'trace_events':events})
                     history += [ChatTurn(role='user',content=question),ChatTurn(role='assistant',content=response.answer[:6000])]
                     if i<len(case.turns)-1:

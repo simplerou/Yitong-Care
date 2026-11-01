@@ -30,9 +30,18 @@ def relevance_reason(query: str, title: str, content: str, url: str = '') -> str
         if benefit in query and not any(alias in body for alias in ('津贴','补贴','补助')): return 'benefit_missing'
     if '养老' in query and '补贴' in query:
         if not re.search(r'(?:养老|老年|高龄).{0,160}(?:补贴|津贴|补助)|(?:补贴|津贴|补助).{0,160}(?:养老|老年|高龄)',body,re.S): return 'topic_not_coincident'
-    specific = [w for w in requested if w not in {'养老','补贴','津贴'}]
+    if '高龄' in query and any(word in query for word in ('津贴','补贴','补助')):
+        pension=re.search(r'高龄(?:老年人|老人)?(?:生活)?(?:津贴|补贴|补助)|高龄(?:老年人|老人).{0,80}(?:津贴|补贴|补助)|养老服务补贴.{0,100}高龄(?:老年人|老人)|高龄.{0,50}养老服务补贴',body,re.S)
+        if not pension: return 'specific_benefit_not_coincident'
+    from app.services.web.query_plan import requested_aspects,relevant_service_text
+    if re.search(r'长期护理保险|长护险',query) and requested_aspects(query)==['services'] and not relevant_service_text(content):
+        return 'service_catalog_missing'
+    scheme_requested=bool(re.search(r'长期护理保险|长护险',query))
+    scheme_match=bool(re.search(r'长期护理保险|长护险',body))
+    if scheme_requested and not scheme_match: return 'specific_topic_missing'
+    specific = [w for w in requested if w not in {'养老','补贴','津贴'} and not (scheme_requested and w in {'长期护理','长护险'})]
     if specific and not any(word in body for word in specific): return 'specific_topic_missing'
-    if requested and not any(word in body for word in requested): return 'topic_missing'
+    if requested and not any(word in body for word in requested) and not (scheme_requested and scheme_match): return 'topic_missing'
     terms = {w for w in jieba.cut(query, HMM=False) if len(w)>1 and w not in STOP and re.search(r'[\u4e00-\u9fffa-zA-Z]',w)}
     return None if requested or any(word in body for word in terms) else 'topic_missing'
 

@@ -56,6 +56,8 @@ def test_clarification_skips_retrieval_and_preserves_history(monkeypatch):
     assert result.status=='clarification' and not calls and result.citations==[]
     assert model.calls[0]['history'][0]['content']=='我想申请长护险'
     assert result.steps==['understand','clarify']
+    assert result.metrics.llm_calls == 1
+    assert set(result.metrics.stage_ms) == {'understand', 'clarify'}
 
 
 def test_no_hits_does_not_generate(monkeypatch):
@@ -74,6 +76,9 @@ def test_answer_and_sparse_citations_use_actual_source_indices(monkeypatch):
     assert [c.index for c in result.citations]==[2]
     assert result.citations[0].hit.chunk_id==2
     assert result.steps==['understand','retrieve','generate','validate_citations','verify_grounding']
+    assert result.metrics.llm_calls == 3
+    assert result.metrics.llm_failures == 0
+    assert set(result.metrics.stage_ms) == {'understand', 'retrieve', 'generate', 'validate', 'verify_grounding'}
     assert 'evidence' in model.calls[1] and 'history' not in model.calls[1]
 
 

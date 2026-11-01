@@ -10,6 +10,8 @@ from app.core.exceptions import BusinessError
 from app.models.conversation import PolicyConversation, PolicyTurn
 from app.schemas.conversation import ConversationRecord, StoredTurn
 from app.schemas.chat import PolicyQuestion, ChatTurn
+from app.schemas.policy import DialogueState
+from app.services.chat.dialogue_state import build_dialogue
 
 
 def get_conversation_lock_dir():
@@ -50,7 +52,7 @@ def listing(db,page,page_size):
 def recover_interrupted(db,key):
     pending=db.scalars(select(PolicyTurn).where(PolicyTurn.conversation_id==key,PolicyTurn.status=='running')).all()
     for row in pending:
-        row.status='failed';row.error='上次回答任务已中断，未保存最终答案。可重试最后一条问题。'
+        row.status='failed';row.stage='failed';row.error='上次回答任务已中断，未保存最终答案。可重试最后一条问题。'
     if pending: db.commit()
 
 
@@ -91,10 +93,10 @@ def ask(db,key,request,root,generate):
                 raise BusinessError('请求标识已被其他问题使用，请刷新后重试。',409)
             if turn.status=='succeeded' or not request.retry: return StoredTurn.model_validate(turn)
             if turn.seq!=last_seq: raise BusinessError('只能重试会话中最后一条失败的问题，请重新提问。',409)
-            turn.attempts+=1;turn.status='running';turn.error=None
+            turn.attempts+=1;turn.status='running';turn.error=None;turn.stage='understand'
         else:
             if request.retry: raise BusinessError('待重试的问题不存在，请刷新后重新提问。',404)
-            turn=PolicyTurn(id=request_id,conversation_id=key,seq=last_seq+1,question=request.question,status='running',attempts=1)
+            turn=PolicyTurn(id=request_id,conversation_id=key,seq=last_seq+1,question=request.question,status='running',attempts=1,stage='understand')
             db.add(turn)
         conversation.updated_at=datetime.now(UTC).replace(tzinfo=None)
         if turn.seq==1: conversation.title=request.question[:60]
@@ -104,9 +106,18 @@ def ask(db,key,request,root,generate):
         history=[]
         for row in reversed(previous):
             history.extend([ChatTurn(role='user',content=row.question),ChatTurn(role='assistant',content=row.response['answer'][:6000])])
+        # Retain user-confirmed context beyond the three pairs used as model prose.
+        # Legacy conversations backfill from up to 100 preceding successful user turns.
+        saved_state=(previous[0].response or {}).get('dialogue_state') if previous else None
+        if saved_state is not None:
+            state=build_dialogue([request.question],DialogueState.model_validate(saved_state))
+        else:
+            older_questions=db.scalars(select(PolicyTurn.question).where(PolicyTurn.conversation_id==key,PolicyTurn.seq<turn.seq,PolicyTurn.status=='succeeded').order_by(PolicyTurn.seq.desc()).limit(100)).all()
+            state=build_dialogue([*reversed(older_questions),request.question])
         try:
-            answer=generate(PolicyQuestion(question=request.question,history=history))
-            turn.response=answer.model_dump(mode='json');turn.status='succeeded';turn.error=None
+            answer=generate(PolicyQuestion(question=request.question,history=history,dialogue_state=state))
+            answer=answer.model_copy(update={'dialogue_state':state})
+            turn.response=answer.model_dump(mode='json');turn.status='succeeded';turn.error=None;turn.stage='completed'
             conversation.updated_at=datetime.now(UTC).replace(tzinfo=None)
             db.commit();db.refresh(turn)
             return StoredTurn.model_validate(turn)
@@ -115,6 +126,30 @@ def ask(db,key,request,root,generate):
             # Do not expose provider payloads, credentials or exception details.
             failed=db.get(PolicyTurn,request_id)
             if failed:
-                failed.status='failed';failed.error=error.message[:500] if isinstance(error,BusinessError) else '回答服务异常，未保存最终答案。请重试。'
+                failed.status='failed';failed.stage='failed';failed.error=error.message[:500] if isinstance(error,BusinessError) else '回答服务异常，未保存最终答案。请重试。'
                 db.commit()
             raise
+
+
+def update_context(db, key, root, context):
+    with conversation_lock(root, key):
+        row = require_conversation(db, key)
+        row.context = context.model_dump(mode='json')
+        row.updated_at = datetime.now(UTC).replace(tzinfo=None)
+        db.commit()
+        return ConversationRecord.model_validate(row)
+
+
+def progress(db, key, request_id):
+    require_conversation(db, key)
+    row = db.get(PolicyTurn, request_id)
+    if row is None or row.conversation_id != key:
+        raise BusinessError('问题尚未保存或不存在。', 404)
+    return {'request_id': row.id, 'status': row.status, 'stage': row.stage}
+
+
+def record_stage(db, key, request_id, stage):
+    row = db.get(PolicyTurn, request_id)
+    if row is not None and row.conversation_id == key and row.status == 'running':
+        row.stage = stage
+        db.commit()

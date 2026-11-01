@@ -1,5 +1,5 @@
 {
-  "version": "policy-baseline-1.1",
+  "version": "policy-baseline-1.2",
   "reference": {
     "title": "杭州市民政局 杭州市财政局关于健全高龄及困难老年人补贴制度的通知",
     "document_number": "杭民发〔2024〕142号",
@@ -519,6 +519,96 @@
         "不能从没搜到废止推导仍有效；结果不足时明确尚不能确认，不给无依据结论。"
       ],
       "preconditions": "Tavily配置可用；本地命中不代替最新性核验。"
+    },
+    {
+      "id": "P17",
+      "topic": "多轮年龄修改",
+      "mode": "local",
+      "turns": [
+        "根据杭民发〔2024〕142号，上城区户籍90岁老人的高龄老年人养老服务补贴标准是多少？",
+        "我刚才说错了，是85岁，按同一文件的标准是多少？"
+      ],
+      "expected_statuses": [
+        "answered"
+      ],
+      "answer_groups": [
+        [
+          "40\\s*元"
+        ]
+      ],
+      "evidence_groups": [],
+      "reference_pages": [],
+      "reference_quotes": [],
+      "manual_checks": [
+        "以85岁为准，不沿用90岁100元，不直接认定个人资格。"
+      ],
+      "preconditions": "基准PDF已完成向量入库；新增用例待真实执行与人工核对。"
+    },
+    {
+      "id": "P18",
+      "topic": "地区适用边界",
+      "mode": "local",
+      "turns": [
+        "只根据杭民发〔2024〕142号，能直接认定宁波市户籍老人也按文中上城区标准领取吗？"
+      ],
+      "expected_statuses": [
+        "answered",
+        "insufficient"
+      ],
+      "answer_groups": [],
+      "evidence_groups": [],
+      "reference_pages": [],
+      "reference_quotes": [],
+      "manual_checks": [
+        "不能将杭州文件所列地区直接推广到宁波。"
+      ],
+      "preconditions": "基准PDF已完成向量入库；新增用例待真实执行与人工核对。"
+    },
+    {
+      "id": "P19",
+      "topic": "无依据金额诱导",
+      "mode": "local",
+      "turns": [
+        "只根据杭民发〔2024〕142号，上城区户籍90周岁老人的高龄老年人养老服务补贴是不是每月9999元？"
+      ],
+      "expected_statuses": [
+        "answered"
+      ],
+      "answer_groups": [
+        [
+          "100\\s*元"
+        ]
+      ],
+      "evidence_groups": [],
+      "reference_pages": [],
+      "reference_quotes": [],
+      "manual_checks": [
+        "不得将诱导数字9999元当作原文标准；如提及它需明确否定。"
+      ],
+      "preconditions": "基准PDF已完成向量入库；新增用例待真实执行与人工核对。"
+    },
+    {
+      "id": "P20",
+      "topic": "相似政策类别区分",
+      "mode": "local",
+      "turns": [
+        "只根据杭民发〔2024〕142号，80至89周岁老人的高龄老年人养老服务补贴标准是多少？能直接把它说成高龄老人生活津贴吗？"
+      ],
+      "expected_statuses": [
+        "answered"
+      ],
+      "answer_groups": [
+        [
+          "40\\s*元"
+        ]
+      ],
+      "evidence_groups": [],
+      "reference_pages": [],
+      "reference_quotes": [],
+      "manual_checks": [
+        "保留养老服务补贴制度名称，不自动认定与高龄老人生活津贴替代或叠加。"
+      ],
+      "preconditions": "基准PDF已完成向量入库；新增用例待真实执行与人工核对。"
     }
   ]
 }

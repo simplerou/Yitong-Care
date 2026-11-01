@@ -3,7 +3,7 @@ import { createPinia,setActivePinia } from 'pinia'
 import { conversationsApi,type ConversationRecord,type ConversationDetail,type StoredTurn,type PolicyAnswer } from '../../src/api/chat'
 import { ApiError } from '../../src/api/http'
 import { usePolicyChatStore } from '../../src/stores/policyChat'
-vi.mock('../../src/api/chat',()=>({conversationsApi:{list:vi.fn(),create:vi.fn(),detail:vi.fn(),remove:vi.fn(),ask:vi.fn()}}))
+vi.mock('../../src/api/chat',()=>({conversationsApi:{list:vi.fn(),create:vi.fn(),detail:vi.fn(),remove:vi.fn(),ask:vi.fn(),saveContext:vi.fn(),progress:vi.fn()}}))
 const conversation=(id='session-a'):ConversationRecord=>({id,title:'政策问答',created_at:'2026-10-29T00:00:00Z',updated_at:'2026-10-29T00:00:00Z'})
 const answer=():PolicyAnswer=>({status:'answered',answer:'历史答案',citations:[],retrieved_hits:[],web_sources:[],web_status:'not_used',web_warning:null,vector_count:1,reason:'grounded_answer',retrieval_log_id:null,model:'saved-model',knowledge_scope:['general'],steps:[]})
 const turn=(status:StoredTurn['status']='succeeded'):StoredTurn=>({id:'request-1',conversation_id:'session-a',seq:1,question:'问题',status,attempts:1,response:status==='succeeded'?answer():null,error:status==='failed'?'服务失败':null,created_at:'2026-10-29T00:00:00Z',updated_at:'2026-10-29T00:00:00Z'})
@@ -67,4 +67,33 @@ it('轮询发现会话已被删除时停止，不无限请求旧会话',async()=
  const requests=vi.mocked(conversationsApi.detail).mock.calls.length
  await vi.advanceTimersByTimeAsync(9000)
  expect(conversationsApi.detail).toHaveBeenCalledTimes(requests)
+})
+it('生成中读取真实阶段，完成后停止轮询',async()=>{
+ await store.select('session-a')
+ let resolve:(value:StoredTurn)=>void=()=>{}
+ vi.mocked(conversationsApi.ask).mockReturnValueOnce(new Promise(r=>{resolve=r}))
+ vi.mocked(conversationsApi.progress).mockResolvedValue({request_id:'request-1',status:'running',stage:'verify_grounding'})
+ const task=store.send('问题');await vi.advanceTimersByTimeAsync(1500)
+ expect(store.stage).toBe('verify_grounding');expect(store.sending).toBe(true)
+ resolve(turn());await task
+ const count=vi.mocked(conversationsApi.progress).mock.calls.length
+ await vi.advanceTimersByTimeAsync(6000)
+ expect(conversationsApi.progress).toHaveBeenCalledTimes(count);expect(store.stage).toBe('')
+})
+it('已确认条件独立保存且不会带入其他会话',async()=>{
+ await store.select('session-a')
+ const context={region:'杭州市',age:90,household:'本市户籍',benefit:'养老服务补贴'}
+ vi.mocked(conversationsApi.saveContext).mockResolvedValue({...conversation(),context})
+ await store.saveContext(context)
+ expect(store.active?.context?.age).toBe(90)
+ vi.mocked(conversationsApi.detail).mockResolvedValueOnce(detail([], 'session-b'))
+ await store.select('session-b');expect(store.active?.context).toBeUndefined()
+})
+it('历史回放保留部分回答、缺项及独立通用说明',async()=>{
+ const stored={...turn(),response:{...answer(),coverage:'partial' as const,missing_topics:['local_service_catalog'],general_info:['通用概念，不代表当地待遇。']}}
+ vi.mocked(conversationsApi.detail).mockResolvedValueOnce(detail([stored]))
+ await store.select('session-a')
+ expect(store.latest?.coverage).toBe('partial')
+ expect(store.latest?.general_info).toEqual(['通用概念，不代表当地待遇。'])
+ expect(conversationsApi.ask).not.toHaveBeenCalled()
 })

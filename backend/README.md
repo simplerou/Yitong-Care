@@ -179,7 +179,7 @@ python -m scripts.rebuild_index
 
 ## 政策顾问（LangGraph + Qwen）
 
-已接入 `/api/agents/policy/chat` 与 `/api/agents/policy/config`。LLM 沿用 `.env` 配置，范围由 `POLICY_KB_IDS` 控制（默认 `["general"]`）。图按理解、追问、检索、生成、引用编号检查运行；无有效依据时返回资料不足，不回退演示。当前不流式，政策顾问网页通过会话接口持久化（需迁移0005）；引用编号检查不等于事实核验。详见 [政策顾问实现说明](../docs/项目文档/政策顾问实现说明.md)。无新增数据库迁移，重启后端生效。
+已接入 `/api/agents/policy/chat` 与 `/api/agents/policy/config`。LLM 沿用 `.env` 配置，范围由 `POLICY_KB_IDS` 控制（默认 `["general"]`）。图按理解、追问、检索、生成、引用编号检查运行；无有效依据时返回资料不足，不回退演示。当前不流式，政策顾问网页通过会话接口持久化（需迁移0005）；引用编号检查不等于事实核验。详见 [政策顾问实现说明](../docs/项目文档/政策顾问实现说明.md)。当前版本需先迁移到0006再重启后端。
 
 ## Tavily 联网搜索
 
@@ -193,7 +193,7 @@ python -m scripts.rebuild_index
 
 ## 固定政策业务评测
 
-`python -m scripts.evaluate_policy --validate-only` 校验18条固定用例；`python -m scripts.evaluate_policy` 运行16条本地用例；加 `--web` 运行全部18条（会调用真实模型及搜索服务）。报告默认写入被忽略的 `var/evaluations/`，包括完整回答和来源快照。机械断言不代表政策事实准确，仍需人工逐条核对。详见 [评测说明](../docs/项目文档/政策顾问评测说明.md)。
+`python -m scripts.evaluate_policy --validate-only` 校验22条固定用例；`python -m scripts.evaluate_policy` 运行20条本地用例；加 `--web` 运行全部22条（会调用真实模型及搜索服务）。报告默认写入被忽略的 `var/evaluations/`，包括完整回答和来源快照。机械断言不代表政策事实准确，仍需人工逐条核对。详见 [评测说明](../docs/项目文档/政策顾问评测说明.md)。
 
 正文批量提取默认超时独立设为60秒（`TAVILY_EXTRACT_TIMEOUT_SECONDS`），搜索仍使用`TAVILY_TIMEOUT_SECONDS`。评测可用`--recheck-report <report.json>`离线复核原回答，不重复消耗模型额度。
 
@@ -201,4 +201,21 @@ python -m scripts.rebuild_index
 
 ## 政策顾问会话保存
 
-执行 `python -m alembic upgrade head` 升级0005，重启后端后使用新会话接口。问答、来源及审查快照保存在MySQL，回放不请求模型；UUID去重、失败显式重试及单机文件锁保护写入。无状态 `/agents/policy/chat` 保留兼容，评测不写入会话。详见 [会话持久化说明](../docs/项目文档/政策顾问会话持久化说明.md)。
+执行 `python -m alembic upgrade head` 升级至0006（包含0005），重启后端后使用新会话接口。问答、来源及审查快照保存在MySQL，回放不请求模型；UUID去重、失败显式重试及单机文件锁保护写入。无状态 `/agents/policy/chat` 保留兼容，评测不写入会话。详见 [会话持久化说明](../docs/项目文档/政策顾问会话持久化说明.md)。
+
+
+## 2026-10-30后续优化
+
+政策标签、连续原文上下文、会话确认条件、实际阶段轮询、短期Tavily缓存与模型token统计已接入。需先执行 `python -m alembic upgrade head` 再重启；本环境真实迁移未成功，离线SQL已验证。操作、接口和边界见 [后续优化与使用说明](../docs/项目文档/政策顾问后续优化与使用说明.md)。缓存用 `TAVILY_CACHE_TTL_SECONDS=0` 关闭，时效问题自动绕过。
+
+
+会话问答新增自动DialogueState，随现有答案JSON保存用户明确条件，原始最近三轮之外仍可续接；旧会话首次继续按最多100条成功用户消息补建。地区及类别明确后先检索回答，服务项目/待遇标准不再菜单式追问。无需新增数据库迁移。
+
+
+政策问答支持带引用和独立审查的部分回答，缺项用固定枚举记录；通用长护险概念另栏呈现，不当作当地待遇。长护险服务目录使用定向查询、窗口截取与来源排序，仍限一次搜索与正文提取；无需新迁移。手工测试见 [部分回答与联网目录测试清单](../docs/项目文档/政策顾问部分回答与联网目录测试清单.md)。
+
+
+目录查询首轮无结果后现支持最多两轮市级医保/目录补搜；默认 `TAVILY_FALLBACK_SEARCHES=2`，0关闭。首轮成功不加搜，同链接不重复提取，上游错误停止；最多3轮搜索，可能增加等待和Tavily调用。市级来源不代表区县适用性已核实。无需迁移，重启生效。
+
+
+目录问答生成后仍model_insufficient时，可继续使用原有3轮总搜索预算中的余量；数字/格式/语义错误不触发补搜，不为错误草稿寻找支撑。没有新增来源则停止，Web来源总数仍受TAVILY_MAX_RESULTS限制。
