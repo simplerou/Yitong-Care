@@ -27,6 +27,7 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
   const stats = ref<KnowledgeStats>({ documents: 0, chunks: 0, vectors: 0, pending: 0 })
   const total = ref(0), page = ref(1), pageSize = 20, query = ref('')
   const loading = ref(false), uploading = ref(false), error = ref(''), busyId = ref(''), detailBusy = ref(false)
+  const queue = ref<{ name: string; size: number; status: 'pending' | 'uploading' | 'done' | 'error'; message?: string }[]>([])
   const selectedDocId = ref(''), choices = ref<KnowledgeDocument[]>([])
   const toast = useDemoStore(), ui = useOverlay()
   let version = 0
@@ -61,18 +62,44 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
     choices.value = all
   }
 
-  async function upload(file: File, kbId = 'general', source = '本地上传') {
-    if (uploading.value) return
-    if (!/\.(pdf|docx|txt|md|markdown)$/i.test(file.name)) { toast.notify('仅支持 PDF / DOCX / TXT / Markdown，旧版 DOC 请另存为 DOCX。', 'error'); return }
-    if (file.size > 50 * 1024 * 1024) { toast.notify('单个文件不能超过 50MB。', 'error'); return }
-    if (!file.size) { toast.notify('不能上传空文件。', 'error'); return }
+  function rejectReason(file: File): string | null {
+    if (!/\.(pdf|docx|txt|md|markdown)$/i.test(file.name)) return '仅支持 PDF / DOCX / TXT / Markdown'
+    if (file.size > 50 * 1024 * 1024) return '超过 50MB'
+    if (!file.size) return '空文件'
+    return null
+  }
+
+  async function uploadMany(files: File[], kbId = 'general', source = '本地上传') {
+    if (uploading.value || !files.length) return
+    queue.value = files.map(file => ({ name: file.name, size: file.size, status: 'pending' as const }))
     uploading.value = true
+    let done = 0, failed = 0
     try {
-      await documentsApi.upload(file, kbId, source)
+      for (const [index, file] of files.entries()) {
+        const item = queue.value[index]
+        const reason = rejectReason(file)
+        if (reason) { item.status = 'error'; item.message = reason; failed++; continue }
+        item.status = 'uploading'
+        try {
+          await documentsApi.upload(file, kbId, source)
+          item.status = 'done'; done++
+        } catch (e) {
+          item.status = 'error'; item.message = e instanceof Error ? e.message : '上传失败'; failed++
+        }
+      }
       page.value = 1; query.value = ''; await load()
-      toast.notify('上传成功，正在解析正文。')
-    } catch (e) { toast.notify(e instanceof Error ? e.message : '上传失败。', 'error') }
-    finally { uploading.value = false }
+    } finally { uploading.value = false }
+    if (done && failed) toast.notify(`已上传 ${done} 份，${failed} 份失败，请看上传列表。`, 'error')
+    else if (done) toast.notify(files.length > 1 ? `已上传 ${done} 份，正在逐份解析正文。` : '上传成功，正在解析正文。')
+    else toast.notify('没有文件上传成功。', 'error')
+  }
+
+  function upload(file: File, kbId = 'general', source = '本地上传') {
+    return uploadMany([file], kbId, source)
+  }
+
+  function clearQueue() {
+    if (!uploading.value) queue.value = []
   }
 
   async function detail(id: string) {
@@ -112,5 +139,6 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
   }
 
   return { documents, bases, stats, total, page, pageSize, query, loading, uploading, error, busyId, detailBusy,
-    selectedDocId, choices, load, loadBases, loadChoices, upload, detail, remove, retry, loadDemo }
+    selectedDocId, choices, queue, load, loadBases, loadChoices, upload, uploadMany, clearQueue,
+    detail, remove, retry, loadDemo }
 })

@@ -56,3 +56,34 @@ describe('真实知识库状态', () => {
     expect(store.stats.documents).toBe(0)
   })
 })
+
+describe('批量上传', () => {
+  const dto = (name: string) => ({
+    id: `id-${name}`, kb_id: 'safety', name, type: 'TXT', size: 2, source: '公开资料',
+    status: 'parsing', error_message: null, chunk_count: 0, vector_count: 0,
+    created_at: '2026-11-01T00:00:00+00:00', updated_at: '2026-11-01T00:00:00+00:00',
+  })
+
+  it('逐个上传并记录每份状态', async () => {
+    vi.mocked(documentsApi.list).mockResolvedValue(response())
+    vi.mocked(documentsApi.upload).mockImplementation(async file => dto(file.name))
+    const store = useKnowledgeStore()
+    const files = [new File(['a'], '安全-a.txt'), new File(['b'], '安全-b.txt')]
+    await store.uploadMany(files, 'safety', '公开资料')
+    expect(documentsApi.upload).toHaveBeenCalledTimes(2)
+    expect(documentsApi.upload).toHaveBeenNthCalledWith(1, files[0], 'safety', '公开资料')
+    expect(store.queue.map(item => item.status)).toEqual(['done', 'done'])
+    expect(store.uploading).toBe(false)
+  })
+
+  it('非法文件标为失败，其余文件继续上传', async () => {
+    vi.mocked(documentsApi.list).mockResolvedValue(response())
+    vi.mocked(documentsApi.upload).mockImplementation(async file => dto(file.name))
+    const store = useKnowledgeStore()
+    await store.uploadMany([new File(['x'], '旧版.doc'), new File(['y'], '正常.txt')])
+    expect(store.queue[0].status).toBe('error')
+    expect(store.queue[0].message).toContain('PDF')
+    expect(store.queue[1].status).toBe('done')
+    expect(documentsApi.upload).toHaveBeenCalledTimes(1)
+  })
+})

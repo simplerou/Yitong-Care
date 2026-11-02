@@ -7,6 +7,7 @@ import fcntl
 from sqlalchemy import func, select
 from app.core.config import BACKEND_DIR
 from app.core.exceptions import BusinessError
+from app.services.ownership import visible_to_account, owner_filter
 from app.models.conversation import PolicyConversation, PolicyTurn
 from app.schemas.conversation import ConversationRecord, StoredTurn
 from app.schemas.chat import PolicyQuestion, ChatTurn
@@ -33,19 +34,19 @@ def conversation_lock(root: Path, conversation_id: str):
 
 def require_conversation(db,key):
     row=db.get(PolicyConversation,key)
-    if row is None: raise BusinessError('会话不存在或已删除。',404)
+    if row is None or not visible_to_account(db, row): raise BusinessError('会话不存在或已删除。',404)
     return row
 
 
 def create(db):
-    row=PolicyConversation(id=str(uuid4()),title='新政策咨询')
+    row=PolicyConversation(owner_id=db.info.get('account_id'), id=str(uuid4()),title='新政策咨询')
     db.add(row);db.commit();db.refresh(row)
     return ConversationRecord.model_validate(row)
 
 
 def listing(db,page,page_size):
-    total=db.scalar(select(func.count()).select_from(PolicyConversation)) or 0
-    rows=db.scalars(select(PolicyConversation).order_by(PolicyConversation.updated_at.desc(),PolicyConversation.id.desc()).offset((page-1)*page_size).limit(page_size)).all()
+    total=db.scalar(select(func.count()).select_from(PolicyConversation).where(owner_filter(db, PolicyConversation))) or 0
+    rows=db.scalars(select(PolicyConversation).where(owner_filter(db, PolicyConversation)).order_by(PolicyConversation.updated_at.desc(),PolicyConversation.id.desc()).offset((page-1)*page_size).limit(page_size)).all()
     return {'items':[ConversationRecord.model_validate(r) for r in rows],'total':total,'page':page,'page_size':page_size}
 
 

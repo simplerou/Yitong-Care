@@ -41,6 +41,16 @@ class Settings(BaseSettings):
     tavily_max_results: int = Field(default=3, ge=1, le=5)
     tavily_include_domains: list[str] = ["gov.cn"]
     policy_kb_ids: list[str] = ["general"]
+    health_kb_ids: list[str] = ["general"]
+    health_enabled: bool = True
+    medication_kb_ids: list[str] = ["general"]
+    medication_enabled: bool = True
+    diet_kb_ids: list[str] = ["general"]
+    diet_enabled: bool = True
+    safety_kb_ids: list[str] = ["general"]
+    safety_enabled: bool = True
+    mind_kb_ids: list[str] = ["general"]
+    mind_enabled: bool = True
     embedding_base_url: str = ""
     embedding_api_key: SecretStr = SecretStr("")
     embedding_model: str = Field(default="", max_length=80)

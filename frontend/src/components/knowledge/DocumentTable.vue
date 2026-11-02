@@ -6,12 +6,20 @@ import StatusTag from '../common/StatusTag.vue'
 import type { KnowledgeDocument } from '../../types/models'
 defineProps<{ documents: KnowledgeDocument[] }>()
 const store = useKnowledgeStore(), router = useRouter(), ui = useOverlay()
+const KB_NAMES: Record<string, string> = {
+  general: '通用知识库', policy: '政策法规库', health: '健康管理库', medication: '用药安全库',
+  diet: '膳食营养库', safety: '居家安全库', mind: '心理关怀库',
+}
+function kbName(id?: string) {
+  if (!id) return '未分类'
+  return store.bases.find(base => base.id === id)?.name || KB_NAMES[id] || id
+}
 function go(id: string,vector=false) { store.selectedDocId = id; void router.push(vector?'/vector':'/chunk') }
 const canRetry = (d: KnowledgeDocument) => d.status === 'failed' || (d.parsing && !!d.updatedAt && Date.now() - Date.parse(d.updatedAt) >= 10 * 60 * 1000)
 </script>
 <template>
   <div class="table-wrap"><table class="table">
-    <thead><tr><th>文档名称</th><th>类型</th><th>大小</th><th>已切块</th><th>状态</th><th>上传时间</th><th style="text-align:right">操作</th></tr></thead>
+    <thead><tr><th>文档名称</th><th>知识库</th><th>类型</th><th>大小</th><th>已切块</th><th>状态</th><th>上传时间</th><th style="text-align:right">操作</th></tr></thead>
     <tbody>
       <tr v-for="d in documents" :key="d.id">
         <td><div class="name"><span class="doc-ico"><AppIcon name="doc" :size="15" /></span>
@@ -19,6 +27,7 @@ const canRetry = (d: KnowledgeDocument) => d.status === 'failed' || (d.parsing &
             <div v-if="d.errorMessage" class="document-error">{{ d.errorMessage }}</div>
           </div>
         </div></td>
+        <td><span class="badge kb-badge" :title="`该文档只被「${kbName(d.kbId)}」检索`">{{ kbName(d.kbId) }}</span></td>
         <td><span class="badge">{{ d.type }}</span></td><td class="muted num">{{ d.size }}</td>
         <td class="num">{{ d.chunkCount ? `${d.chunkCount} 段` : '—' }}</td>
         <td><StatusTag :doc="d" /></td><td class="muted num">{{ d.uploadAt }}</td>
@@ -31,7 +40,7 @@ const canRetry = (d: KnowledgeDocument) => d.status === 'failed' || (d.parsing &
             @click="ui.confirm('删除文档', `将删除「${d.name}」的原文件、正文和文本块，并使相关向量索引失效，且不可恢复。`, () => { void store.remove(d.id) }, '确认删除')">删除</button>
         </div></td>
       </tr>
-      <tr v-if="!documents.length"><td colspan="7" style="text-align:center;padding:30px">没有匹配的文档，请尝试其他名称。</td></tr>
+      <tr v-if="!documents.length"><td colspan="8" style="text-align:center;padding:30px">没有匹配的文档，请尝试其他名称。</td></tr>
     </tbody>
   </table></div>
 </template>

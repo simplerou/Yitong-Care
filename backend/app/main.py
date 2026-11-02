@@ -4,6 +4,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
+from app.api.v1.auth import router as auth_router
+from app.api.v1.health import router as health_router
 from app.core.config import get_settings
 from app.core.exceptions import register_exception_handlers
 from app.db.session import engine
@@ -25,6 +27,8 @@ def create_app() -> FastAPI:
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Content-Type", "Authorization"],
     )
+    application.include_router(health_router, prefix="/api")
+    application.include_router(auth_router)
     application.include_router(api_router)
     register_exception_handlers(application)
     return application

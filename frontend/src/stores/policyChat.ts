@@ -1,3 +1,4 @@
+import { currentAccount } from '../api/auth'
 import { computed,ref } from 'vue'
 import { defineStore } from 'pinia'
 import { conversationsApi,type StoredTurn,type ConversationRecord,type ConversationDetail,type ConsultationContext } from '../api/chat'
@@ -14,8 +15,8 @@ export const usePolicyChatStore=defineStore('policyChat',()=>{
  const latest=computed(()=>turns.value.find(t=>t.id===evidenceTurnId.value)?.response||null)
  let generation=0,poll:ReturnType<typeof setTimeout>|undefined,controller:AbortController|undefined
  let uncertain:{id:string;question:string;conversationId:string}|null=null
- function remember(id:string){try{if(id)localStorage.setItem(selectionKey,id);else localStorage.removeItem(selectionKey)}catch{/* Selection storage is optional. */}}
- function savedSelection(){try{return localStorage.getItem(selectionKey)||''}catch{return ''}}
+ function remember(id:string){try{if(id)localStorage.setItem(selectionKey + ':' + (currentAccount.value?.id || 'offline'),id);else localStorage.removeItem(selectionKey + ':' + (currentAccount.value?.id || 'offline'))}catch{/* Selection storage is optional. */}}
+ function savedSelection(){try{return localStorage.getItem(selectionKey + ':' + (currentAccount.value?.id || 'offline'))||''}catch{return ''}}
  function apply(detail:ConversationDetail){active.value=detail.conversation;turns.value=detail.turns;hasMore.value=detail.has_more;before.value=detail.next_before_seq;evidenceTurnId.value=[...detail.turns].reverse().find(t=>t.response)?.id||'';remember(detail.conversation.id)}
  function schedule(){clearTimeout(poll);if(!pending.value||!active.value)return;const token=generation,id=active.value.id;poll=setTimeout(async()=>{
   try{const detail=await conversationsApi.detail(id);if(token!==generation)return;apply(detail);error.value=''}

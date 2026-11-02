@@ -42,7 +42,11 @@ def client(tmp_path):
     metadata.create_all(engine)
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     with factory() as db:
-        db.add(KnowledgeBase(id='general', name='通用知识库'))
+        # Mirror the six agent knowledge bases plus the default one.
+        for kb_id, name in [('general', '通用知识库'), ('policy', '政策法规库'), ('health', '健康管理库'),
+                            ('medication', '用药安全库'), ('diet', '膳食营养库'), ('safety', '居家安全库'),
+                            ('mind', '心理关怀库')]:
+            db.add(KnowledgeBase(id=kb_id, name=name))
         db.commit()
     storage = LocalFileStorage(tmp_path / 'uploads', max_bytes=1024)
     app = create_app()
@@ -61,5 +65,14 @@ def client(tmp_path):
     app.dependency_overrides[get_index_manager] = lambda: IndexManager(tmp_path / 'faiss')
     app.dependency_overrides[get_conversation_lock_dir] = lambda: tmp_path/'conversation_locks'
     with TestClient(app) as test_client:
+        test_client.post('/api/auth/register', json={'phone':'13800000000','name':'测试用户','password':'Test12345'})
+        from app.models.auth import Account
+        from sqlalchemy import select
+        with factory() as db:
+            db.scalar(select(Account).where(Account.phone=='13800000000')).role='admin'
+            db.commit()
+        login = test_client.post('/api/auth/login', json={'phone':'13800000000','password':'Test12345'})
+        assert login.status_code == 200, login.text
+        test_client.headers['Authorization'] = 'Bearer ' + login.json()['token']
         yield test_client, storage, factory
     engine.dispose()

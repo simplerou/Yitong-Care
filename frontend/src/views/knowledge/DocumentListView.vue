@@ -35,8 +35,17 @@ onBeforeUnmount(() => clearInterval(timer))
       </div>
     </div>
     <div class="upload-metadata">
-      <label>存入知识库<AppSelect v-model="kbId" class="select" :disabled="store.uploading"><option v-if="!store.bases.length" value="general">通用知识库</option><option v-for="base in store.bases" :key="base.id" :value="base.id">{{ base.name }}</option></AppSelect></label>
-      <label>资料来源<input v-model="source" class="input" maxlength="512" :disabled="store.uploading" placeholder="例如：社区服务中心"></label>
+      <label class="meta-field">
+        <span class="meta-label">存入知识库</span>
+        <AppSelect v-model="kbId" class="select kb-select" :disabled="store.uploading" :fit-input-width="false">
+          <option v-if="!store.bases.length" value="general">通用知识库</option>
+          <option v-for="base in store.bases" :key="base.id" :value="base.id">{{ base.name }}</option>
+        </AppSelect>
+      </label>
+      <label class="meta-field">
+        <span class="meta-label">资料来源</span>
+        <input v-model="source" class="input" maxlength="512" :disabled="store.uploading" placeholder="例如：社区服务中心">
+      </label>
     </div>
     <UploadDropzone ref="upload" :kb-id="kbId" :source="source" />
     <div class="card" :aria-busy="store.loading">

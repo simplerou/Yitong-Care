@@ -7,6 +7,7 @@ from app.db.base import Base, TimestampMixin, MYSQL_TABLE_OPTIONS
 class PolicyConversation(TimestampMixin, Base):
     __tablename__='policy_conversation'
     __table_args__=(Index('ix_policy_conversation_updated','updated_at'),MYSQL_TABLE_OPTIONS)
+    owner_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     id: Mapped[str]=mapped_column(String(36),primary_key=True)
     context: Mapped[dict | None]=mapped_column(JSON,nullable=True)
     title: Mapped[str]=mapped_column(String(100),nullable=False)

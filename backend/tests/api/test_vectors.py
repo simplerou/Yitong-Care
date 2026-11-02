@@ -37,8 +37,8 @@ def vectors(client,tmp_path):
     yield api,embedder,manager,factory
 
 
-def document(api,text,name='资料.txt'):
-    uploaded=api.post('/api/documents',files={'file':(name,text.encode())})
+def document(api,text,name='资料.txt',kb='general'):
+    uploaded=api.post('/api/documents',files={'file':(name,text.encode())},data={'kb_id':kb})
     assert uploaded.status_code==202,uploaded.text
     doc_id=uploaded.json()['id']
     saved=api.post(f'/api/documents/{doc_id}/chunks',json={'size':100,'overlap':20})
@@ -222,8 +222,9 @@ def test_legacy_history_keeps_original_scores(vectors):
 def test_policy_api_uses_real_retrieval_and_scoped_citations(vectors):
     from app.services.chat.llm import get_llm
     from test_policy_graph import Model, decision
+    from app.core.config import get_settings
     api, model, manager, factory = vectors
-    doc = document(api, '杭州市社区助餐可向食堂申请登记。')
+    doc = document(api, '杭州市社区助餐可向食堂申请登记。', kb=get_settings().policy_kb_ids[0])
     embed(api, doc)
     llm = Model(decision(), {'sufficient':True,'paragraphs':[{'text':'社区助餐可向食堂申请登记。','sources':[1]}]})
     api.app.dependency_overrides[get_llm] = lambda:llm
