@@ -38,11 +38,14 @@ export function referenceMenu(week:string):WeeklyMenu{
 export interface GenerateMenuRequest {
  week_start:string;version:number;options_per_meal:number;available_ingredients:string[];kitchen_notes:string;budget_notes:string;season:string;capacity_per_option:number|null;avoid_previous:boolean;acknowledge_pending:boolean
 }
+export interface RecipeReference {status:'success'|'disabled';provider:string;count:number;recipes:{id:string;name:string;category:string;ingredients:string[];steps:string[];source_url:string|null}[]}
 export interface GeneratedMenu {
+ recipe_reference?:RecipeReference;
  menu:WeeklyMenu;coverage:Coverage;summary:{in_care:number;reviewed_count:number;pending_count:number};warnings:string[];repetition:{same_as_previous:number;options:number;repeated_within_week:number;previous_available:boolean};repairs:number;model:string;saved:false;published:false;context_changed:boolean
 }
 export interface ProfileReading {suggestion:Omit<Profile,'version'|'resident_version'>;evidence:{field:string;value:string;source:string;quote:string}[];questions:string[];rejected_count:number;model:string;saved:false;resident_version:number;resident_id:string}
 export const mealsApi={
+ recipeSource:()=>request<{enabled:boolean;configured:boolean;provider:string}>('/meals/recipe-source'),
  readProfile:(id:string)=>request<ProfileReading>(`/meals/profiles/${id}/read`,{method:'POST'},180_000),
  generate:(data:GenerateMenuRequest)=>request<GeneratedMenu>('/meals/generate',{method:'POST',body:JSON.stringify(data)},900_000),
  requirements:()=>request<{items:Requirement[]}>('/meals/requirements'),

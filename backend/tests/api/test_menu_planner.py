@@ -258,3 +258,29 @@ def test_failure_reports_exact_issues_and_saves_private_diagnostic(client):
         assert secret not in raw
     with factory() as db:
         assert db.scalar(select(func.count()).select_from(WeeklyMenu))==0
+
+def test_howtocook_candidates_feed_planner_without_replacing_review_flow(client,monkeypatch):
+    import app.agents.menu_planner as planner
+    api,_,_=client
+    requirement(api)
+    context={'status':'success','provider':'HowToCook MCP','count':1,'recipes':[{'id':'recipe-1','name':'清蒸南瓜','ingredients':['南瓜'],'steps':['蒸熟'],'source_url':None}]}
+    monkeypatch.setattr(planner,'candidates',lambda **kwargs:context)
+    llm=FakePlanner();setup_llm(api,llm)
+    response=api.post('/api/meals/generate',json=request())
+    assert response.status_code==200,response.text
+    assert response.json()['recipe_reference']==context
+    assert response.json()['saved'] is False and response.json()['published'] is False
+    assert all(call['external_recipe_candidates']==context['recipes'] for call in llm.calls)
+
+
+def test_howtocook_failure_stops_before_model_and_keeps_menu_unsaved(client,monkeypatch):
+    import app.agents.menu_planner as planner
+    api,_,factory=client
+    requirement(api)
+    def fail(**kwargs):raise BusinessError('HowToCook 菜谱查询失败',502)
+    monkeypatch.setattr(planner,'candidates',fail)
+    llm=FakePlanner();setup_llm(api,llm)
+    response=api.post('/api/meals/generate',json=request())
+    assert response.status_code==502
+    assert not llm.calls
+    with factory() as db:assert db.scalar(select(func.count()).select_from(WeeklyMenu))==0

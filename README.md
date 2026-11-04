@@ -69,6 +69,7 @@ cp .env.example .env
 | `EMBEDDING_BASE_URL` / `EMBEDDING_API_KEY` / `EMBEDDING_MODEL` | 文档与问题向量化服务 |
 | `EMBEDDING_DIMENSIONS` | 向量模型实际输出维度，当前项目配置为 1024 |
 | `TAVILY_API_KEY` | 联网搜索与正文提取 |
+| `HOWTOCOOK_ENABLED` / `HOWTOCOOK_MCP_URL` | 可选的外部食谱 MCP 查询，专属 Streamable HTTP 地址 |
 
 菜单模型与通用模型共用服务地址和 API Key。模型标识需要在所用服务商和账号下可用；修改配置后重启后端。
 

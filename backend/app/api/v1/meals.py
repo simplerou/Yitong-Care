@@ -61,3 +61,8 @@ def read_profile(key:UUID,db:DatabaseSession,actor:Admin,llm:Annotated[QwenClien
     fresh=db.scalar(select(Resident).where(Resident.id==str(key)))
     if not fresh or fresh.status!='in_care' or fresh.version!=version:raise HTTPException(409,'读取期间档案已变化，请刷新后重试')
     return {**result,'resident_version':version,'resident_id':str(key)}
+
+
+from app.services.howtocook import configuration
+@router.get('/recipe-source')
+def recipe_source(actor:Admin):return configuration()

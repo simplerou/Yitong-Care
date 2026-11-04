@@ -33,6 +33,12 @@ class Settings(BaseSettings):
     llm_api_key: SecretStr = SecretStr("")
     llm_model: str = ""
     menu_llm_model: str = ""
+    howtocook_enabled: bool = False
+    howtocook_mcp_url: SecretStr = SecretStr("")
+    howtocook_api_token: SecretStr = SecretStr("")
+    howtocook_categories: list[str] = ["早餐", "主食", "荤菜", "素菜", "汤与粥", "水产"]
+    howtocook_max_recipes: int = Field(default=24, ge=6, le=48)
+    howtocook_timeout_seconds: int = Field(default=120, ge=10, le=300)
     llm_timeout_seconds: int = Field(default=60, ge=1, le=300)
     tavily_fallback_searches: int = Field(default=2, ge=0, le=2)
     tavily_cache_ttl_seconds: int = Field(default=300, ge=0, le=600)
