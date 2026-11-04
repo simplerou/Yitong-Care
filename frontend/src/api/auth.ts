@@ -1,8 +1,9 @@
 import { computed, ref } from 'vue'
 import { request } from './http'
-export interface Account { id: string; name: string; role?: 'admin' | 'user' }
+export interface Account { id: string; name: string; role?: 'admin' | 'user' | 'resident' }
 export const currentAccount = ref<Account | null>(null)
 export const isAdmin = computed(() => currentAccount.value?.role === 'admin')
+export const isResident = computed(() => currentAccount.value?.role === 'resident')
 const key = 'yitong-session'
 export function sessionToken() { return sessionStorage.getItem(key) || '' }
 export function clearSession() { sessionStorage.removeItem(key); currentAccount.value = null }

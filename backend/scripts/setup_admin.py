@@ -24,6 +24,8 @@ def provision(db, phone, name, password=None, claim_legacy=False):
         db.add(account)
         db.flush()
     else:
+        if account.role == 'resident':
+            raise ValueError('老人账号不能直接提升为管理员，请使用独立管理账号')
         account.role = 'admin'
     counts = {}
     if claim_legacy:

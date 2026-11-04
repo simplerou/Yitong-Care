@@ -31,3 +31,6 @@ api_router.include_router(mind_chat_router)
 
 from app.api.v1.residents import router as residents_router
 api_router.include_router(residents_router)
+
+from app.api.v1.meals import router as meals_router
+api_router.include_router(meals_router)

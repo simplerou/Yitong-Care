@@ -17,3 +17,7 @@ from app.models.mind_conversation import MindConversation, MindTurn
 from app.models.auth import Account, LoginSession
 
 from app.models.resident import Resident, ResidentAssignment, ResidentChange
+
+from app.models.resident import ResidentAccountBinding
+
+from app.models.meals import WeeklyMenu, MealProfile, MealSelection, MealChange

@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     llm_base_url: str = ""
     llm_api_key: SecretStr = SecretStr("")
     llm_model: str = ""
+    menu_llm_model: str = ""
     llm_timeout_seconds: int = Field(default=60, ge=1, le=300)
     tavily_fallback_searches: int = Field(default=2, ge=0, le=2)
     tavily_cache_ttl_seconds: int = Field(default=300, ge=0, le=600)

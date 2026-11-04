@@ -42,3 +42,9 @@ def require_admin(account=Depends(require_account)):
     if account.role != 'admin':
         raise HTTPException(403, '此操作仅管理员可用')
     return account
+
+
+def require_staff(account=Depends(require_account)):
+    if account.role not in ('admin', 'user'):
+        raise HTTPException(403, '此页面仅供院内工作人员使用，请前往我的档案')
+    return account

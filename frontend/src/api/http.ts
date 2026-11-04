@@ -25,6 +25,7 @@ export async function request<T>(path: string, options: RequestInit = {}, timeou
       try {
         const data = await response.json()
         if (typeof data.detail === 'string') message = data.detail
+        else if (data.detail && typeof data.detail.message === 'string') message = data.detail.message
         else if (Array.isArray(data.detail)) message = data.detail[0]?.msg || message
       } catch { /* 代理或服务异常可能返回非 JSON */ }
       throw new ApiError(message, response.status)

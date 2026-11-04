@@ -24,7 +24,7 @@ function jump(value:string|number){
 function turn(delta:number){jump(page.value+delta)}
 onMounted(()=>void load())
 </script>
-<template><div class="page residents"><AppBreadcrumb/><PageHeader title="老人档案" :subtitle="isAdmin ? '集中维护老人的基本资料、照护要点与负责人员。' : '查看分配给您的老人资料，为照护工作做好准备。'"><RouterLink v-if="isAdmin" class="btn primary" to="/residents/new"><AppIcon name="plus" :size="16"/> 新建档案</RouterLink></PageHeader>
+<template><div class="page residents"><AppBreadcrumb/><PageHeader title="健康档案" :subtitle="isAdmin ? '集中维护老人的基本资料、照护要点与负责人员。' : '查看分配给您的老人资料，为照护工作做好准备。'"><RouterLink v-if="isAdmin" class="btn primary" to="/residents/new"><AppIcon name="plus" :size="16"/> 新建档案</RouterLink></PageHeader>
   <div class="resident-banner"><AppIcon name="shield" :size="22"/><div><b>{{ isAdmin?'一人一档，关爱有据可查':'仅展示您负责的老人' }}</b><p>档案中的未知情况请保留“未记录”，不要将资料缺失理解为没有风险。</p></div><span class="badge blue">{{ total }} 份档案</span></div>
   <form class="card resident-filters" @submit.prevent="load(true)"><label for="resident-search">查找老人<input id="resident-search" v-model="query" class="input" maxlength="100" placeholder="姓名、档案编号或房间位置"></label><label for="resident-status">入住状态<AppSelect id="resident-status" v-model="status" class="select"><option value="">全部状态</option><option value="in_care">在院</option><option value="discharged">已离院</option></AppSelect></label><button class="btn primary" :disabled="loading">查询</button></form>
   <div v-if="error" class="resident-error" role="alert">{{ error }} <button class="btn" @click="load()">重新加载</button></div>

@@ -63,6 +63,8 @@ def client(tmp_path):
     app.dependency_overrides[get_session_factory] = lambda: factory
     app.dependency_overrides[get_storage] = lambda: storage
     app.dependency_overrides[get_index_manager] = lambda: IndexManager(tmp_path / 'faiss')
+    from app.services.menu_diagnostics import get_menu_diagnostic_dir
+    app.dependency_overrides[get_menu_diagnostic_dir] = lambda: tmp_path/'menu_diagnostics'
     app.dependency_overrides[get_conversation_lock_dir] = lambda: tmp_path/'conversation_locks'
     with TestClient(app) as test_client:
         test_client.post('/api/auth/register', json={'phone':'13800000000','name':'测试用户','password':'Test12345'})

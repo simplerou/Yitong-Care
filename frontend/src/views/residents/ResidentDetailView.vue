@@ -5,6 +5,7 @@ import { isAdmin } from '../../api/auth'
 import { residentsApi, emptyResident, type ResidentInput, type Resident, type ResidentChange } from '../../api/residents'
 import AppBreadcrumb from '../../components/layout/AppBreadcrumb.vue'
 import PageHeader from '../../components/common/PageHeader.vue'
+import AccountBindingPanel from '../../components/residents/AccountBindingPanel.vue'
 import AppSelect from '../../components/common/AppSelect.vue'
 const route=useRoute(),router=useRouter(),creating=computed(()=>route.name==='resident-new')
 const form=reactive<ResidentInput>(emptyResident()),record=ref<Resident|null>(null),assignees=ref<{id:string;name:string;phone_hint:string}[]>([])
@@ -29,7 +30,12 @@ watch(()=>route.fullPath,()=>void load(),{immediate:true})
 function reload(){if(!dirty.value || window.confirm('重新加载会放弃未保存修改，是否继续？'))void load()}
 const labels:Record<string,string>={name:'姓名',gender:'性别',birth_date:'出生日期',admission_date:'入住日期',status:'入住状态',location:'房间/床位',care_level:'照护安排',contact_name:'联系人',contact_relation:'关系',contact_phone:'联系电话',source:'信息来源',assigned_account_ids:'负责人员',...Object.fromEntries(notes.map(field=>[field.key,field.label]))}
 function changeValue(key:string,value:unknown){if(value==null || value==='')return '未记录';if(key==='assigned_account_ids' && Array.isArray(value))return value.map(id=>assignees.value.find(person=>person.id===id)?.name || `账号 ${String(id).slice(0,8)}`).join('、') || '未分配';if(key==='gender')return ({male:'男',female:'女',unknown:'未记录'} as Record<string,string>)[String(value)] || String(value);if(key==='status')return value==='in_care'?'在院':'已离院';return String(value)}
-function differences(change:ResidentChange){return (Object.keys(emptyResident()) as (keyof ResidentInput)[]).filter(key=>JSON.stringify(change.before?.[key])!==JSON.stringify(change.after[key])).map(key=>({label:labels[key],before:changeValue(key,change.before?.[key]),after:changeValue(key,change.after[key])}))}
+function differences(change:ResidentChange){
+ const result=(Object.keys(emptyResident()) as (keyof ResidentInput)[]).filter(key=>JSON.stringify(change.before?.[key])!==JSON.stringify(change.after[key])).map(key=>({label:labels[key],before:changeValue(key,change.before?.[key]),after:changeValue(key,change.after[key])}))
+ const before=change.before?.bound_account,after=change.after.bound_account
+ if(before?.id!==after?.id)result.push({label:'老人登录账号',before:before?`${before.name} · ${before.phone_hint}`:'未绑定',after:after?`${after.name} · ${after.phone_hint}`:'未绑定'})
+ return result
+}
 function stamp(value:string){return new Date(value.endsWith('Z')?value:value+'Z').toLocaleString('zh-CN',{hour12:false})}
 </script>
 <template><div class="page residents"><AppBreadcrumb/><PageHeader :title="creating?'新建老人档案':record?.name || '老人档案'" :subtitle="record?`${record.record_no} · 档案版本 ${record.version}`:'从基本信息开始，逐步完善照护资料。'"><RouterLink class="btn" to="/residents">返回列表</RouterLink></PageHeader>
@@ -48,6 +54,7 @@ function stamp(value:string){return new Date(value.endsWith('Z')?value:value+'Z'
  <section v-if="isAdmin" class="card resident-section"><h2>负责人员</h2><p class="resident-helper">勾选后，该工作人员即可查看本档案；取消后收回访问权限。管理员始终可管理档案。</p><p v-if="!assignees.length" class="resident-helper">暂无可分配的工作人员账号。可以先保存档案，待账号注册后再分配。</p><div class="resident-assignees"><label v-for="person in assignees" :key="person.id"><input v-model="form.assigned_account_ids" type="checkbox" :value="person.id"><span>{{ person.name }}<small>{{ person.phone_hint }}</small></span></label></div></section>
  <section v-if="isAdmin && !creating" class="card resident-section"><label for="r-reason">本次修改原因（必填）<input id="r-reason" v-model="reason" class="input" required maxlength="300" placeholder="说明修改了什么、核对依据是什么"></label></section>
  <div v-if="isAdmin" class="resident-save"><span>{{ creating?'保存后自动生成档案编号。':'变更将记录操作人、时间及前后内容。' }}</span><button class="btn primary" type="submit" :disabled="saving">{{ saving?'正在保存…':creating?'创建档案':'保存修改' }}</button></div></fieldset></form>
+ <AccountBindingPanel v-if="loaded && isAdmin && record && !creating" :key="record.id+':'+record.version" :resident-id="record.id" :disabled="dirty || saving" @saved="load"/>
  <section v-if="loaded && isAdmin && !creating" class="card resident-section"><h2>档案变更记录</h2><p v-if="historyError" class="resident-error" role="alert">{{ historyError }}</p><ol class="resident-history"><li v-for="change in changes" :key="change.id"><b>{{ change.reason }}</b><p>{{ change.actor_name }} · {{ stamp(change.created_at) }} · 版本 {{ change.after.version }}</p><details><summary>查看变更内容</summary><dl class="resident-diff"><template v-for="item in differences(change)" :key="item.label"><dt>{{ item.label }}</dt><dd><span>原：{{ item.before }}</span><span>现：{{ item.after }}</span></dd></template></dl></details></li></ol><button v-if="changes.length && changes.length%10===0" class="btn" type="button" @click="history(true)">更早记录</button></section>
 </div></template>
 <style src="../../styles/residents.css"></style>

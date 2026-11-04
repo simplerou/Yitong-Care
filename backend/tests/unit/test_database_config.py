@@ -24,7 +24,7 @@ def test_models_compile_for_mysql_with_chinese_search_and_embedding():
         "medication_conversation", "medication_turn",
         "diet_conversation", "diet_turn",
         "safety_conversation", "safety_turn",
-        "mind_conversation", "mind_turn", "account", "login_session", "resident", "resident_assignment", "resident_change"
+        "mind_conversation", "mind_turn", "account", "login_session", "resident", "resident_assignment", "resident_change", "resident_account_binding", "weekly_menu", "meal_profile", "meal_selection", "meal_change"
     }
     dialect = mysql.dialect()
     ddl = str(CreateTable(DocumentChunk.__table__).compile(dialect=dialect))

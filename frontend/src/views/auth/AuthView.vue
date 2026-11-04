@@ -38,9 +38,9 @@ async function submit() {
       await router.push('/login')
       notice.value = '账号创建成功，请登录。'
     } else {
-      await authApi.login(form.phone.trim(), form.password)
+      const account = await authApi.login(form.phone.trim(), form.password)
       form.password = ''
-      window.location.hash = '/home'
+      window.location.hash = account.role==='resident'?'/my-profile':'/home'
       window.location.reload()
     }
   } catch (error) { notice.value = error instanceof Error ? error.message : '请求失败，请稍后重试' }

@@ -43,3 +43,10 @@ class ResidentChange(TimestampMixin, Base):
     reason: Mapped[str] = mapped_column(String(300))
     before: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     after: Mapped[dict] = mapped_column(JSON)
+
+
+class ResidentAccountBinding(TimestampMixin, Base):
+    __tablename__ = 'resident_account_binding'
+    __table_args__ = MYSQL_TABLE_OPTIONS
+    resident_id: Mapped[str] = mapped_column(ForeignKey('resident.id'), primary_key=True)
+    account_id: Mapped[str] = mapped_column(ForeignKey('account.id'), unique=True, nullable=False)

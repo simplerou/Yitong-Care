@@ -9,6 +9,7 @@ FIELDS = tuple(key for key in ResidentInput.model_fields if key != 'assigned_acc
 
 def scope(account):
     if account.role == 'admin': return True
+    if account.role != 'user': return False
     return exists(select(ResidentAssignment.resident_id).where(ResidentAssignment.resident_id==Resident.id,ResidentAssignment.account_id==account.id))
 
 def require(db, key, account):
@@ -29,7 +30,7 @@ def snapshot(db,row):
 
 def validate_assignees(db, ids):
     if ids:
-        found=set(db.scalars(select(Account.id).where(Account.id.in_(ids),Account.role=='user')))
+        found=set(db.scalars(select(Account.id).where(Account.id.in_(ids),Account.role=='user').with_for_update()))
         if found != set(ids): raise HTTPException(422,'负责人员必须是现有普通工作人员账号，请刷新人员列表')
 
 def assign(db,key,ids):

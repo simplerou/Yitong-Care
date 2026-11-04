@@ -7,9 +7,9 @@ from app.core.exceptions import BusinessError
 
 
 class QwenClient:
-    def __init__(self, settings):
+    def __init__(self, settings, *, model: str | None = None):
         self.settings = settings
-        self.model = settings.llm_model
+        self.model = settings.llm_model if model is None else model
 
     def ensure_configured(self):
         url = urlsplit(self.settings.llm_base_url)
@@ -51,3 +51,8 @@ class QwenClient:
 
 def get_llm():
     return QwenClient(get_settings())
+
+
+def get_menu_llm():
+    settings = get_settings()
+    return QwenClient(settings, model=settings.menu_llm_model or settings.llm_model)
