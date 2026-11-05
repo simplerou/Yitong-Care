@@ -8,6 +8,7 @@ from app.api.v1.embeddings import Model, Manager
 from app.schemas.chat import PolicyQuestion, PolicyAnswer
 from app.services.chat.llm import get_llm, QwenClient
 from app.agents.orchestrator import run_policy
+from app.services.policy_skill import load_policy_skill
 from app.services.web.tavily import get_web_search, TavilySearch
 
 router = APIRouter(prefix='/agents/policy', tags=['policy-agent'])
@@ -16,7 +17,7 @@ router = APIRouter(prefix='/agents/policy', tags=['policy-agent'])
 @router.get('/config')
 def config():
     settings = get_settings()
-    return {'model':settings.llm_model, 'configured':bool(settings.llm_model and settings.llm_base_url and settings.llm_api_key.get_secret_value()),
+    return {'skill':load_policy_skill().metadata(),'model':settings.llm_model, 'configured':bool(settings.llm_model and settings.llm_base_url and settings.llm_api_key.get_secret_value()),
             'knowledge_scope':settings.policy_kb_ids, 'web_configured':bool(settings.tavily_api_key.get_secret_value().strip()), 'workflow':'langgraph', 'streaming':False}
 
 

@@ -7,7 +7,7 @@ from langgraph.graph import StateGraph, START, END
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from app.schemas.chat import PolicyAnswer, PolicyQuestion, Citation
 from app.schemas.retrieval import SearchRequest
-from app.services.chat.prompt_builder import UNDERSTAND, GENERATE
+from app.services.chat.prompt_builder import build_policy_prompts
 from app.services.chat.citation import Draft
 from app.services.chat.evidence_limits import evidence_scope_issues
 from app.services.chat.grounding import LABELS, review_with_repair, GroundingReviewError, evidence_spans, ages, numeric_support_issues, remove_extra_calculation, remove_denied_user_amount
@@ -72,6 +72,9 @@ class State(TypedDict, total=False):
 
 
 def run_policy(request: PolicyQuestion, db, embedder, manager, llm, kb_ids: list[str], web=None, trace=None, progress=None) -> PolicyAnswer:
+    skill, understand_prompt, generate_prompt = build_policy_prompts()
+    logger.info("Policy skill name=%s version=%s sha256=%s",skill.name,skill.version,skill.sha256)
+    if trace: trace("skill",skill.metadata())
     metrics = PolicyMetrics()
     llm = MeasuredLLM(llm, metrics)
     llm.ensure_configured()
@@ -101,7 +104,7 @@ def run_policy(request: PolicyQuestion, db, embedder, manager, llm, kb_ids: list
     def understand(state):
         payload = {'question':resolved_input, 'user_reply':request.question, 'history':history, 'confirmed_context':request.context.model_dump(), 'provided_fields':sorted(provided_fields), 'dialogue_state':dialogue.model_dump(), 'today':date.today().isoformat()}
         for attempt in range(2):
-            raw = llm.complete_json(UNDERSTAND, payload)
+            raw = llm.complete_json(understand_prompt, payload)
             try:
                 decision = Understanding.model_validate(raw)
                 break
@@ -259,7 +262,7 @@ def run_policy(request: PolicyQuestion, db, embedder, manager, llm, kb_ids: list
                    'freshness_requested':wants_freshness(state), 'web_status':state.get('web_status','not_used'),
                    'web_warning':state.get('web_warning')}
         for attempt in range(2):
-            draft = llm.complete_json(GENERATE, payload)
+            draft = llm.complete_json(generate_prompt, payload)
             try:
                 parsed = Draft.model_validate(draft)
                 if not parsed.sufficient and parsed.paragraphs:
@@ -421,7 +424,7 @@ def run_policy(request: PolicyQuestion, db, embedder, manager, llm, kb_ids: list
     if state['status']=='insufficient' and source_gap:
         state['answer']=gap_message(gaps)+(('\n\n'+state['web_warning']) if state.get('web_warning') else '')
     general_info=concept_help((state.get('decision').query or resolved_input)) if partial or (state['status']=='insufficient' and source_gap) else []
-    return PolicyAnswer(coverage='partial' if partial else 'complete' if state['status']=='answered' else 'none',missing_topics=gaps,general_info=general_info,dialogue_state=dialogue,consultation_context=request.context,metrics=metrics.snapshot(),answer_checks=state.get('answer_checks'),policy_categories=state.get('policy_categories',[]),status=state['status'], answer=state['answer'], citations=state.get('citations',[]),
+    return PolicyAnswer(skill=skill.metadata(),coverage='partial' if partial else 'complete' if state['status']=='answered' else 'none',missing_topics=gaps,general_info=general_info,dialogue_state=dialogue,consultation_context=request.context,metrics=metrics.snapshot(),answer_checks=state.get('answer_checks'),policy_categories=state.get('policy_categories',[]),status=state['status'], answer=state['answer'], citations=state.get('citations',[]),
         web_diagnostics=state.get('web_diagnostics'), web_sources=state.get('web_sources',[]), web_status=state.get('web_status','not_used'), web_warning=state.get('web_warning'),
         retrieved_hits=state.get('hits',[]), vector_count=state.get('vector_count',0), reason=state.get('reason'),
         retrieval_log_id=state.get('log_id'), model=llm.model, knowledge_scope=kb_ids, steps=state['steps'])

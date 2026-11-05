@@ -1,3 +1,4 @@
+import pytest
 from copy import deepcopy
 from datetime import date
 import json
@@ -6,6 +7,11 @@ from sqlalchemy import select,func
 from app.models.meals import WeeklyMenu,MealProfile,MealChange
 from app.services.chat.llm import get_menu_llm
 from app.core.exceptions import BusinessError
+
+@pytest.fixture(autouse=True)
+def isolate_external_recipe_service(monkeypatch):
+    # Local .env may enable a real service; automated planner tests must stay offline.
+    monkeypatch.setattr('app.agents.menu_planner.candidates',lambda **kwargs:{'status':'disabled','provider':'HowToCook MCP','recipes':[],'count':0})
 
 WEEK='2030-01-14'
 class FakePlanner:

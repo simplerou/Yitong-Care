@@ -189,3 +189,35 @@ def test_generation_repairs_format_without_losing_evidence(monkeypatch):
     assert result.status=='answered' and len(model.calls)==3
     assert model.calls[1]['evidence']==model.calls[2]['evidence']
     assert 'format_retry' in model.calls[2]
+
+
+def test_policy_uses_one_skill_snapshot_across_model_calls(monkeypatch,tmp_path):
+    from shutil import copytree
+    from importlib.resources import files
+    from app.services.policy_skill import load_policy_skill
+    root=tmp_path/'skill';copytree(str(files('app.skills').joinpath('eldercare-policy')),root)
+    p=root/'references/evidence-answer.md';p.write_text(p.read_text()+'\nREQUEST_A_RULE\n')
+    original=load_policy_skill(root)
+    monkeypatch.setattr('app.services.chat.prompt_builder.load_policy_skill',lambda:load_policy_skill(root))
+    setup_retrieval(monkeypatch,[hit()])
+    class RecordingModel(Model):
+        def __init__(self,*args):super().__init__(*args);self.systems=[]
+        def complete_json(self,system,payload):
+            self.systems.append(system)
+            if len(self.systems)==1:p.write_text(p.read_text()+'\nREQUEST_B_RULE\n')
+            return super().complete_json(system,payload)
+    model=RecordingModel(decision(),{'sufficient':True,'paragraphs':[{'text':'可向社区咨询。','sources':[1]}]})
+    result=run(model)
+    assert result.status=='answered'
+    assert 'REQUEST_A_RULE' not in model.systems[0]
+    assert 'REQUEST_A_RULE' in model.systems[1] and 'REQUEST_B_RULE' not in model.systems[1]
+    assert result.skill.model_dump()==original.metadata()
+    assert load_policy_skill(root).sha256!=result.skill.sha256
+
+
+def test_skill_load_failure_happens_before_model_or_retrieval(monkeypatch,tmp_path):
+    from app.services.policy_skill import load_policy_skill
+    monkeypatch.setattr('app.services.chat.prompt_builder.load_policy_skill',lambda:load_policy_skill(tmp_path))
+    model=Model();calls=setup_retrieval(monkeypatch,[])
+    with pytest.raises(BusinessError) as error:run(model)
+    assert error.value.status_code==503 and not model.calls and not calls

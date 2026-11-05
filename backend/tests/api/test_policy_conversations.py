@@ -6,6 +6,7 @@ from app.models import KnowledgeDocument
 from app.models.conversation import PolicyConversation, PolicyTurn
 from app.schemas.chat import PolicyAnswer, Citation, WebSource, AnswerChecks
 from app.services import conversations
+from app.services.policy_skill import load_policy_skill
 from test_policy_graph import hit
 
 BASE='/api/agents/policy/conversations'
@@ -17,7 +18,7 @@ def chat(client,monkeypatch):
     calls=[]
     def generate(question,*args,**kwargs):
         calls.append(question)
-        return PolicyAnswer(status='answered',answer='依据原文回答。【1】【2】',citations=[Citation(index=1,hit=hit()),
+        return PolicyAnswer(skill=load_policy_skill().metadata(),status='answered',answer='依据原文回答。【1】【2】',citations=[Citation(index=1,hit=hit()),
             Citation(index=2,source_type='web',web=WebSource(title='官方资料',url='https://hangzhou.gov.cn/policy',content='当次网页正文',retrieved_at='2026-10-29T00:00:00Z'))],
             retrieved_hits=[hit()],web_sources=[WebSource(title='官方资料',url='https://hangzhou.gov.cn/policy',content='当次网页正文',retrieved_at='2026-10-29T00:00:00Z')],
             web_status='success',model='test-qwen',knowledge_scope=['general'],steps=['verify_grounding'],answer_checks=AnswerChecks(status='passed',checked_paragraphs=1,accepted_paragraphs=1))
@@ -44,6 +45,7 @@ def test_persist_replay_dedupe_and_deleted_source_snapshot(chat,monkeypatch):
     response=send(api,key,'原文如何解释',request_id)
     assert response.status_code==200,response.text
     turn=response.json();assert turn['status']=='succeeded' and turn['response']['answer_checks']['status']=='passed'
+    assert turn['response']['skill']==load_policy_skill().metadata()
     assert len(calls)==1
     again=send(api,key,'原文如何解释',request_id)
     assert again.json()==turn and len(calls)==1

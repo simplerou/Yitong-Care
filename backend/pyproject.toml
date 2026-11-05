@@ -34,3 +34,6 @@ include = ["app*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.setuptools.package-data]
+"app.skills" = ["eldercare-policy/SKILL.md", "eldercare-policy/references/*.md"]

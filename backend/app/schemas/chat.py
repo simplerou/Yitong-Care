@@ -99,7 +99,14 @@ class ExecutionMetrics(BaseModel):
     llm_ms: float = Field(ge=0)
 
 
+class SkillUsage(BaseModel):
+    name: str
+    version: str
+    sha256: str
+
+
 class PolicyAnswer(BaseModel):
+    skill: SkillUsage | None = None
     coverage: Literal['complete','partial','none'] | None = None
     missing_topics: list[Gap] = Field(default_factory=list)
     general_info: list[str] = Field(default_factory=list)

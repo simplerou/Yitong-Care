@@ -37,7 +37,7 @@ AI 读取档案只预填表单，不自动核实或保存。菜单生成也不�
 - **前端**：Vue 3、TypeScript、Vite、Pinia、Vue Router、Element Plus。
 - **后端**：Python 3.11+、FastAPI、SQLAlchemy、Alembic。
 - **存储与检索**：MySQL、FAISS、jieba / BM25、RRF 融合。
-- **智能体**：LangGraph 流程编排、Qwen 的 OpenAI 兼容接口、Tavily 联网搜索。
+- **智能体**：LangGraph 流程编排、Qwen 的 OpenAI 兼容接口、Tavily 联网搜索；政策顾问使用项目内版本化 Skill 管理业务规则。
 
 MySQL 保存业务数据、文档正文、切块与向量；FAISS 保存派生的向量检索索引。检索采用 Embedding 语义召回 + BM25 关键词召回 + RRF 融合。
 
@@ -147,6 +147,7 @@ npm run build
 ## 项目文档
 
 - [文档总目录](docs/项目文档/README.md)
+- [政策顾问 Skill 使用与维护](docs/项目文档/03-使用说明/政策顾问Skill使用与维护.md)
 - [养老院升级实施清单](docs/项目文档/01-项目规划/养老院升级实施清单.md)
 - [老人账号与档案绑定](docs/项目文档/03-使用说明/老人账号与档案绑定说明.md)
 - [每周餐食与老人选餐](docs/项目文档/03-使用说明/每周餐食与老人选餐使用说明.md)
