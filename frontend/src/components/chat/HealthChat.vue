@@ -165,7 +165,7 @@ function checkLabel(response: HealthAnswer) {
           <div v-if="busy" class="rag-status" role="status"><span class="spinner"></span>{{ progressLabel }}，请稍候…</div>
         </div>
         <div v-if="error || configError" class="document-error" role="alert">{{ error || configError }} <button class="btn sm" :disabled="busy" @click="retry">重试</button></div>
-        <ChatComposer placeholder="例如：早上量的血压 150/95，头有点晕，需要去医院吗？" :busy="busy || store.unconfirmed || !configuration?.configured" @send="send" />
+        <ChatComposer :context-key="store.active?.id || ''" placeholder="例如：早上量的血压 150/95，头有点晕，需要去医院吗？" :busy="busy || store.unconfirmed || !configuration?.configured" @send="send" />
         <p v-if="configuration && !configuration.configured" class="document-error">请在后端配置聊天模型后再提问。</p>
         <p v-if="configuration && !configuration.enabled" class="document-error">健康管家当前未启用，请在后端设置 HEALTH_ENABLED=true。</p>
       </section>

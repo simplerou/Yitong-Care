@@ -8,6 +8,7 @@
 
 | 模块 | 已实现能力 |
 | --- | --- |
+| 老人语音输入 | 六个 Agent 支持录音后由 Qwen ASR 模型转写，核对后手动发送 |
 | 账号与权限 | 登录注册、管理员权限、老人账号与档案绑定、本人会话隔离 |
 | 老人档案 | 档案新增、查询、编辑、分页及健康和饮食记录维护 |
 | 饮食需求 | 选择老人、AI 读取档案并预填、原文依据展示、管理员核实保存 |
@@ -69,6 +70,7 @@ cp .env.example .env
 | `EMBEDDING_BASE_URL` / `EMBEDDING_API_KEY` / `EMBEDDING_MODEL` | 文档与问题向量化服务 |
 | `EMBEDDING_DIMENSIONS` | 向量模型实际输出维度，当前项目配置为 1024 |
 | `TAVILY_API_KEY` | 联网搜索与正文提取 |
+| `ASR_API_URL` / `ASR_API_KEY` / `ASR_MODEL` | 老人语音输入的独立模型配置，默认 DashScope 原生音频接口 |
 | `HOWTOCOOK_ENABLED` / `HOWTOCOOK_MCP_URL` | 可选的外部食谱 MCP 查询，专属 Streamable HTTP 地址 |
 
 菜单模型与通用模型共用服务地址和 API Key。模型标识需要在所用服务商和账号下可用；修改配置后重启后端。

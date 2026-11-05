@@ -34,3 +34,6 @@ api_router.include_router(residents_router)
 
 from app.api.v1.meals import router as meals_router
 api_router.include_router(meals_router)
+
+from app.api.v1.speech import router as speech_router
+api_router.include_router(speech_router)

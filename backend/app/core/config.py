@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     llm_api_key: SecretStr = SecretStr("")
     llm_model: str = ""
     menu_llm_model: str = ""
+    asr_api_url: str = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
+    asr_api_key: SecretStr = SecretStr("")
+    asr_model: str = "qwen-audio-3.0-asr-flash"
+    asr_timeout_seconds: int = Field(default=90, ge=5, le=180)
     howtocook_enabled: bool = False
     howtocook_mcp_url: SecretStr = SecretStr("")
     howtocook_api_token: SecretStr = SecretStr("")
