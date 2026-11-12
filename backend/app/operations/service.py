@@ -29,13 +29,22 @@ def serialize(db,actor,row):
     role=identity(db,actor).role
     payload=dict(row.current)
     proposed=dict(row.proposed)
+    if role=='admin':
+        gate(db,actor,'view_validation');gate(db,actor,'view_cost')
+        payload={};proposed={}
     if role=='kitchen':
         for obj in (payload,proposed):obj.pop('resident_id',None)
-    trace=row.trace if role in ('medical','admin') or row.kind not in ('medication','meal_swap') else [{'node':step['node']} for step in row.trace]
+    trace=row.trace if role in ('medical',) or row.kind not in ('medication','meal_swap') else [{'node':step['node']} for step in row.trace]
+    if role=='admin':trace=[{'node':step['node']} for step in row.trace]
     from app.models.resident import Resident
-    target=db.get(Resident,row.private_context.get('resident_id')) if row.private_context.get('resident_id') and role!='kitchen' else None
+    target=db.get(Resident,row.private_context.get('resident_id')) if row.private_context.get('resident_id') and role not in ('kitchen','admin') else None
     derived={key:row.private_context[key] for key in ('month','lines','pending','formula') if key in row.private_context} if row.kind=='payroll' and role in ('finance','admin') else {}
-    return {'resident_name':target.name if target else None,'calculation':derived,'id':row.id,'kind':row.kind,'status':'expired' if row.status=='pending' and row.expires_at<=utcnow() else row.status,'risk':row.risk,'version':row.version,'proposed':proposed,'current':payload,'validation':public_validation(row.validation,role),'trace':trace,'expires_at':row.expires_at,'created_at':row.created_at,'decision_note':row.decision_note,'can_approve':role==APPROVERS[row.kind],'can_edit':row.owner_id==actor.id and row.status=='pending','owner_id':row.owner_id}
+    if role=='admin' and row.kind=='payroll':
+        from decimal import Decimal
+        derived={'total_amount':str(sum((Decimal(line['amount']) for line in row.private_context.get('lines',[])),Decimal('0'))),'pending_count':len(row.private_context.get('pending',[]))}
+    signoff=row.professional_signoff
+    public_signoff={'signed':True,'signed_at':signoff['signed_at']} if signoff else None
+    return {'professional_signoff':public_signoff,'can_sign':role=='medical' and row.kind=='medication' and row.owner_id==actor.id and row.status=='pending','was_modified':row.proposed!=row.current,'resident_name':target.name if target else None,'calculation':derived,'id':row.id,'kind':row.kind,'status':'expired' if row.status=='pending' and row.expires_at<=utcnow() else row.status,'risk':row.risk,'version':row.version,'proposed':proposed,'current':payload,'validation':public_validation(row.validation,role),'trace':trace,'expires_at':row.expires_at,'created_at':row.created_at,'decision_note':row.decision_note,'can_approve':role==APPROVERS[row.kind] and (row.kind!='medication' or bool(signoff)),'can_edit':row.owner_id==actor.id and row.status=='pending' and (role!='user' or row.kind=='meal_swap'),'owner_id':row.owner_id}
 
 def pending(row,version):
     if row.status!='pending':raise HTTPException(409,'草稿已经处理')
@@ -45,6 +54,7 @@ def pending(row,version):
 def revision(db,actor,key,data,validator):
     row=draft(db,actor,key,True);pending(row,data.version)
     if row.owner_id!=actor.id:raise HTTPException(404,'不存在或无权')
+    if actor.role=='user' and row.kind!='meal_swap':raise HTTPException(403,'上报记录不能编辑，请追加上报')
     gate(db,actor,TASK_TOOL[row.kind])
     payload=normalize(row.kind,data.payload)
     # Corrections cannot redirect a draft to a different resident/cohort.
@@ -52,7 +62,7 @@ def revision(db,actor,key,data,validator):
         if payload.get(field)!=row.current.get(field):raise HTTPException(422,'修改不能更换草稿目标，请重新生成')
     private,result=check(db,actor,row.kind,payload,validator)
     before=row.current
-    row.current=payload;row.validation=result;row.private_context=private;row.source_hash=digest(private);row.version+=1
+    row.current=payload;row.validation=result;row.private_context=private;row.source_hash=digest(private);row.professional_signoff=None;row.version+=1
     db.add(Correction(id=str(uuid4()),draft_id=row.id,actor_id=actor.id,route=data.route,tag=data.tag,reason=data.reason,before=before,after=payload,closed=False))
     event(db,actor,'draft_revised',row.id,route=data.route,tag=data.tag)
     db.commit();return row
@@ -83,6 +93,9 @@ def decision(db,actor,key,data,validator):
     owner=db.get(Account,row.owner_id,populate_existing=True)
     gate(db,owner,TASK_TOOL[row.kind])
     if data.action=='approve':
+        if row.kind=='medication':
+            signature=row.professional_signoff
+            if not signature or signature['version']!=row.version or signature['payload_hash']!=digest(row.current) or signature['source_hash']!=row.source_hash or signature['rule_version']!=row.validation['rule_version'] or signature['graph_hash']!=row.validation['graph_hash']:raise HTTPException(409,'必须先由医务室医生核对并签字；修改后需要重新签字')
         lock_sources(db,row,actor)
         gate(db,owner,TASK_TOOL[row.kind])
         private,result=check(db,owner,row.kind,row.current,validator)
@@ -118,7 +131,7 @@ def build_execution(db,row,actor):
         event(db,actor,'clinical_orders_applied',resident_id,before=clinical_before,after=p.data,draft_id=row.id,ordered_by=row.owner_id)
         from app.operations.state import context
         row.private_context=context(db,resident_id);row.source_hash=digest(row.private_context)
-    if row.kind in ('medication','meal_swap','incident'):
+    if row.kind in ('medication','meal_swap'):
         tasks=[(resident_id,None,{'kind':row.kind,**{k:v for k,v in row.current.items() if k!='resident_id'}})]
     elif row.kind=='menu':tasks=[(None,None,{'kind':'menu','title':row.current['title'],'foods':row.current['foods'],'service_date':row.current['service_date']})]
     else:tasks=[]
@@ -131,13 +144,13 @@ def executions(db,actor):
     query=select(Execution).order_by(Execution.created_at.desc())
     if card.role=='user':query=query.where(Execution.resident_id.in_(select(ResidentAssignment.resident_id).where(ResidentAssignment.account_id==actor.id)))
     elif card.role=='kitchen':query=query.where(Execution.resident_id.is_(None))
-    elif card.role not in ('admin','nursing','medical'):raise HTTPException(404,'不存在或无权')
+    elif card.role not in ('nursing','medical'):raise HTTPException(404,'不存在或无权')
     if card.role in ('medical','nursing') and not card.qualified:raise HTTPException(404,'不存在或无权')
     return list(db.scalars(query.limit(200)))
 
 def complete(db,actor,key,note,validator):
     card=identity(db,actor)
-    gate(db,actor,'approve_swap' if card.role=='kitchen' else 'complete_task')
+    gate(db,actor,'confirm_preparation' if card.role=='kitchen' else 'complete_task')
     row=db.scalar(select(Execution).where(Execution.id==key).with_for_update().execution_options(populate_existing=True))
     if not row:raise HTTPException(404,'不存在或无权')
     if card.role=='kitchen':
@@ -145,7 +158,10 @@ def complete(db,actor,key,note,validator):
     elif row.resident_id:resident(db,actor,row.resident_id,True)
     else:raise HTTPException(404,'不存在或无权')
     if row.status=='completed':return row
+    if row.status!='pending':raise HTTPException(409,'执行单已撤销或不可执行')
     source=db.get(Draft,row.draft_id,populate_existing=True)
+    if source.status!='approved':raise HTTPException(409,'执行单没有有效审批')
+    if source.kind=='medication' and (not source.professional_signoff or source.professional_signoff['payload_hash']!=digest(source.current)):raise HTTPException(409,'用药执行单缺少有效医生签字')
     if source.kind=='meal_swap' and card.role=='user':
         preparation=db.scalar(select(Execution).where(Execution.draft_id==source.id,Execution.resident_id.is_(None)))
         if not preparation or preparation.status!='completed':raise HTTPException(409,'请等待食堂确认备餐完成')
@@ -174,3 +190,14 @@ def clock(db,actor,key,action):
         if now>row.end_at+timedelta(hours=24):raise HTTPException(409,'签退已超时，请护理部核对异常')
         row.checked_out=now
     event(db,actor,'clock_'+action,row.id);db.commit();return row
+
+def sign_medication(db,actor,key,version,note,validator):
+    gate(db,actor,'review_draft')
+    row=draft(db,actor,key,True)
+    if row.kind!='medication' or row.owner_id!=actor.id:raise HTTPException(404,'不存在或无权')
+    pending(row,version);lock_sources(db,row,actor);gate(db,actor,'review_draft')
+    private,result=check(db,actor,row.kind,row.current,validator)
+    if digest(private)!=row.source_hash or result['rule_version']!=row.validation['rule_version'] or result['graph_hash']!=row.validation['graph_hash']:raise HTTPException(409,'资料或规则变化，必须重新核对后签字')
+    row.professional_signoff={'actor_id':actor.id,'version':row.version,'payload_hash':digest(row.current),'source_hash':row.source_hash,'rule_version':result['rule_version'],'graph_hash':result['graph_hash'],'signed_at':utcnow().isoformat(),'note':note}
+    event(db,actor,'medical_draft_signed',row.id,version=row.version)
+    db.commit();return row

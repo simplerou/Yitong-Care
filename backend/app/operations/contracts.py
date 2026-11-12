@@ -103,6 +103,7 @@ class StaffInput(Strict):
 
 from pydantic import StrictBool,StrictInt
 class ValidationResult(Strict):
+    cost:dict=Field(default_factory=dict)
     passed:StrictBool
     rule_version:str=Field(min_length=1,max_length=100)
     graph_hash:str=Field(pattern=r'^[a-f0-9]{64}$')

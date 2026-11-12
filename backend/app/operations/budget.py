@@ -3,7 +3,7 @@ from contextvars import ContextVar
 from time import monotonic
 from fastapi import HTTPException
 _deadline=ContextVar('ops_deadline',default=None)
-def start(seconds=180):return _deadline.set(monotonic()+seconds)
+def start(seconds=180):return _deadline.set(min(_deadline.get() or float('inf'),monotonic()+seconds))
 def reset(token):_deadline.reset(token)
 def remaining(cap=20):
     deadline=_deadline.get()

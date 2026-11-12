@@ -10,12 +10,12 @@ from app.operations.contracts import current_date
 
 ROLES={'admin':'院长','medical':'医务室','kitchen':'食堂','nursing':'护理部','finance':'财务部','user':'护工'}
 TOOLS={
- 'admin':('dashboard','drafts','approve','corrections','assign_role'),
- 'medical':('read_record','drug_evidence','validate_medication','medication_draft','review_draft','execution_list'),
+ 'admin':('view_validation','view_cost','approve'),
+ 'medical':('read_record','drug_evidence','validate_medication','medication_draft','review_draft','receive_incident'),
  'kitchen':('constraints','food_catalog','recipe_search','nutrition_check','menu_draft','review_draft','approve_swap'),
  'nursing':('staff_roster','schedule_check','schedule_draft','care_review','execution_list','constraints'),
  'finance':('read_hours','calculate_payroll','payroll_draft','explain_payroll'),
- 'user':('execution_list','complete_task','clock','report_incident','validate_swap','swap_draft'),
+ 'user':('execution_list','record','report_incident','validate_swap','swap_draft'),
 }
 TASK_TO_ROLE={'medication':'medical','menu':'kitchen','schedule':'nursing','payroll':'finance','meal_swap':'user','incident':'user'}
 TASK_TOOL={'medication':'medication_draft','menu':'menu_draft','schedule':'schedule_draft','payroll':'payroll_draft','meal_swap':'swap_draft','incident':'report_incident'}
@@ -35,7 +35,7 @@ def event(db,actor,action,object_id='',**data):
 def identity(db,actor):
     # Never trust the caller's role snapshot, including at tool/approval boundaries.
     current=db.scalar(select(Account).where(Account.id==actor.id).execution_options(populate_existing=True))
-    if not current or current.role not in ROLES:raise HTTPException(403,'不存在或无权')
+    if not current or current.status!='active' or current.role not in ROLES:raise HTTPException(403,'不存在或无权')
     credential=db.get(Credential,current.id,populate_existing=True)
     qualified=bool(credential and credential.qualification and credential.valid_until>=current_date())
     return Identity(current.id,current.role,current.name,TOOLS[current.role],qualified)
@@ -43,7 +43,8 @@ def identity(db,actor):
 def gate(db,actor,tool):
     if actor is None:raise HTTPException(404,'不存在或无权')
     card=identity(db,actor)
-    if tool not in card.tools or (card.role in ('medical','nursing') and not card.qualified):
+    allowed_tool={'complete_task':'record','clock':'record'}.get(tool,tool) if card.role=='user' else ('approve_swap' if card.role=='kitchen' and tool=='confirm_preparation' else tool)
+    if allowed_tool not in card.tools or (card.role in ('medical','nursing') and not card.qualified):
         event(db,actor,'gateway_denied',tool,reason='qualification' if tool in card.tools else 'tool_not_allowed',role=card.role)
         db.commit()
         raise HTTPException(404,'不存在或无权')

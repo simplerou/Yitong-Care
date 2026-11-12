@@ -36,6 +36,7 @@ class Draft(TimestampMixin,Base):
     status:Mapped[str]=mapped_column(String(24),index=True,default='pending')
     risk:Mapped[int]=mapped_column(Integer)
     version:Mapped[int]=mapped_column(Integer,default=1)
+    professional_signoff:Mapped[dict|None]=mapped_column(JSON,nullable=True)
     proposed:Mapped[dict]=mapped_column(JSON)
     current:Mapped[dict]=mapped_column(JSON)
     private_context:Mapped[dict]=mapped_column(JSON)
@@ -103,3 +104,15 @@ class DrugReference(TimestampMixin,Base):
     valid_from:Mapped[date]=mapped_column(Date)
     valid_until:Mapped[date|None]=mapped_column(Date,nullable=True)
     source_hash:Mapped[str]=mapped_column(String(64))
+
+class MedicalInbox(TimestampMixin,Base):
+    __tablename__='ops_medical_inbox'
+    __table_args__=MYSQL_TABLE_OPTIONS
+    id:Mapped[str]=mapped_column(String(36),primary_key=True)
+    draft_id:Mapped[str]=mapped_column(ForeignKey('ops_draft.id'),unique=True)
+    resident_id:Mapped[str]=mapped_column(ForeignKey('resident.id'))
+    severity:Mapped[str]=mapped_column(String(16))
+    observation:Mapped[str]=mapped_column(String(2000))
+    status:Mapped[str]=mapped_column(String(16),default='unread')
+    handled_by:Mapped[str|None]=mapped_column(ForeignKey('account.id'),nullable=True)
+    handling_note:Mapped[str]=mapped_column(String(1000),default='')

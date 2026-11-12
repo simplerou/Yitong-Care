@@ -42,8 +42,8 @@ def check(db,actor,kind,data,validator):
     return private,result
 
 def public_validation(result,role):
-    if role in ('medical','admin'):return result
-    return {key:result[key] for key in ('passed','rule_version','graph_hash','risk','demo','nutrients') if key in result} | {'issues':[{'code':i['code']} for i in result.get('issues',[])],'paths':[],'references':result.get('nutrition_references',[])}
+    if role=='medical':return result
+    return {key:result[key] for key in ('passed','rule_version','graph_hash','risk','demo','nutrients','cost') if key in result} | {'issues':[{'code':i['code']} for i in result.get('issues',[])],'paths':[],'references':result.get('nutrition_references',[])}
 
 class RunState(TypedDict,total=False):
     kind:str
@@ -53,6 +53,7 @@ class RunState(TypedDict,total=False):
     validation:dict
     explanation:str
     draft_id:str
+    routed_role:str
 
 
 def run(db,actor,request,validator,llm,embedder=None,manager=None):
@@ -66,7 +67,8 @@ def run(db,actor,request,validator,llm,embedder=None,manager=None):
         if card.role!=TASK_TO_ROLE[kind]:raise HTTPException(404,'不存在或无权')
         return {'trace':[{'node':'gateway','role':card.role,'task':kind}]}
     def route(state):
-        return {'trace':state['trace']+[{'node':'supervisor','agent':TASK_TO_ROLE[kind],'tools':PLANS[kind]}]}
+        role=identity(db,actor).role
+        return {'routed_role':role,'trace':state['trace']+[{'node':'supervisor','agent':role,'tools':PLANS[kind]}]}
     def gather(state):
         remaining()
         for tool in PLANS[kind]:gate(db,actor,tool)
@@ -83,7 +85,11 @@ def run(db,actor,request,validator,llm,embedder=None,manager=None):
         return {'private':private,'validation':result,'trace':state['trace']+[{'node':'precheck','rule_version':result['rule_version'],'passed':True}]}
     def generate(state):
         explanation='按岗位结构化输入创建待确认草稿；数值及放行结论来自规则服务。'
-        if request.use_model:
+        if request.use_model and kind in ('medication','menu'):
+            from app.operations.react import run_react
+            _,summary,react_trace=run_react(db,actor,kind,request.instruction or '查证并核对当前固定方案，只准备待人工确认草稿。',validator,llm,resident_id=data.get('resident_id'),fixed=data)
+            return {'explanation':summary,'trace':state['trace']+react_trace+[{'node':'role_agent','agent':identity(db,actor).role,'model_used':True}]}
+        if request.use_model and kind not in ('incident','meal_swap'):
             remaining()
             # Each call contains only this role's bounded result. No cross-agent history.
             from app.services.chat.llm import QwenClient
@@ -95,7 +101,7 @@ def run(db,actor,request,validator,llm,embedder=None,manager=None):
                     summary=candidate;break
             if summary is None:raise HTTPException(502,'岗位Agent结构化输出校验失败，已达到修正上限')
             explanation=summary['summary']
-        return {'explanation':explanation,'trace':state['trace']+[{'node':'role_agent','agent':TASK_TO_ROLE[kind],'model_used':request.use_model}]}
+        return {'explanation':explanation,'trace':state['trace']+[{'node':'role_agent','agent':TASK_TO_ROLE[kind],'model_used':request.use_model and kind not in ('incident','meal_swap')}]}
     def critic(state):
         gate(db,actor,TASK_TOOL[kind])
         private,result=check(db,actor,kind,data,validator)
@@ -108,7 +114,11 @@ def run(db,actor,request,validator,llm,embedder=None,manager=None):
         db.scalar(select(Account).where(Account.id==actor.id).with_for_update())
         gate(db,actor,TASK_TOOL[kind])
         row=Draft(id=str(uuid4()),owner_id=actor.id,kind=kind,status='pending',risk=state['validation']['risk'],version=1,proposed=data,current=data,private_context=state['private'],source_hash=digest(state['private']),validation=state['validation'],trace=state['trace']+[{'node':'human_interrupt','summary':state['explanation']}],expires_at=utcnow()+timedelta(minutes=30),decision_note='')
-        db.add(row);event(db,actor,'draft_created',row.id,kind=kind,rule_version=row.validation['rule_version']);db.commit()
+        db.add(row);db.flush()
+        if kind=='incident':
+            from app.operations.models import MedicalInbox
+            db.add(MedicalInbox(id=str(uuid4()),draft_id=row.id,resident_id=data['resident_id'],severity=data['severity'],observation=data['observation'],status='unread',handling_note=''))
+        event(db,actor,'draft_created',row.id,kind=kind,rule_version=row.validation['rule_version']);db.commit()
         return {'draft_id':row.id}
     # Six role-specific subgraphs are registered beneath the Supervisor. Each
     # receives a fresh request state and has no access to another agent's history.
@@ -121,7 +131,7 @@ def run(db,actor,request,validator,llm,embedder=None,manager=None):
         for name,node in [('gather',gather),('validate',validate),('generate',generate),('critic',critic)]:child.add_node(name,node)
         child.add_edge(START,'gather');child.add_edge('gather','validate');child.add_edge('validate','generate');child.add_edge('generate','critic');child.add_edge('critic',END)
         name=role+'_agent';graph.add_node(name,child.compile());graph.add_edge(name,'suspend');destinations[role]=name
-    graph.add_conditional_edges('route',lambda state:TASK_TO_ROLE[state['kind']],destinations)
+    graph.add_conditional_edges('route',lambda state:state['routed_role'],destinations)
     graph.add_edge('suspend',END)
     token=start()
     try:

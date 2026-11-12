@@ -1,3 +1,4 @@
+from tests.accounts import activate
 from sqlalchemy import select, func
 from app.models.resident import ResidentChange, ResidentAccountBinding
 from app.models.auth import Account
@@ -5,6 +6,7 @@ from app.models.auth import Account
 
 def account(api,phone,name='老人账号'):
     assert api.post('/api/auth/register',json={'phone':phone,'name':name,'password':'Binding123'}).status_code==201
+    activate(api,phone)
     return login(api,phone)
 
 

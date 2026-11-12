@@ -5,4 +5,4 @@ import DefaultLayout from './layouts/DefaultLayout.vue'
 import ToastHost from './components/common/ToastHost.vue'
 import DialogHost from './components/common/DialogHost.vue'
 </script>
-<template><RouterView v-if="route.meta.layout === 'auth'"/><DefaultLayout v-else/><DialogHost/><ToastHost/></template>
+<template><RouterView v-if="['auth','account'].includes(String(route.meta.layout))"/><DefaultLayout v-else/><DialogHost/><ToastHost/></template>

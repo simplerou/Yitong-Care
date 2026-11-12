@@ -1,3 +1,4 @@
+from tests.accounts import activate
 import pytest
 from uuid import uuid4
 from sqlalchemy import select
@@ -8,6 +9,7 @@ from scripts.setup_admin import provision
 
 def regular_user(api, phone):
     assert api.post('/api/auth/register',json={'phone':phone,'name':'普通用户','password':'Regular123','role':'admin'}).status_code==201
+    activate(api,phone)
     result=api.post('/api/auth/login',json={'phone':phone,'password':'Regular123'}).json()
     api.headers['Authorization']='Bearer '+result['token']
     assert result['user']['role']=='user'

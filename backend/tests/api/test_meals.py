@@ -1,3 +1,4 @@
+from tests.accounts import activate
 from datetime import date,datetime,timedelta
 from zoneinfo import ZoneInfo
 from uuid import uuid4
@@ -18,6 +19,7 @@ def menu_data():
 def elder(api,phone):
     row=api.post('/api/residents',json={'name':'虚构老人'+phone[-2:],'source':'选餐测试'}).json()
     user=api.post('/api/auth/register',json={'phone':phone,'name':'老人','password':'MealTest123'}).json()
+    activate(api,phone)
     assert api.put(f"/api/residents/{row['id']}/account-binding",json={'account_id':user['id'],'version':1,'reason':'测试核对'}).status_code==200
     token=api.post('/api/auth/login',json={'phone':phone,'password':'MealTest123'}).json()['token']
     return row['id'],'Bearer '+token

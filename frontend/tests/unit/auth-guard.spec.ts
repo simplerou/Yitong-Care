@@ -45,6 +45,22 @@ describe('登录路由保护', () => {
 it('专业岗位进入协作工作台，不能绕到旧管理页面',async()=>{
  vi.mocked(sessionToken).mockReturnValue('token')
  vi.mocked(authApi.me).mockResolvedValue({id:'medical',name:'医务室',role:'medical'})
- expect(await authGuard({path:'/home',meta:{}} as Parameters<typeof authGuard>[0])).toEqual({name:'operations'})
+ expect(await authGuard({path:'/caregivers',meta:{roles:['nursing']}} as Parameters<typeof authGuard>[0])).toEqual({name:'operations'})
  expect(await authGuard({path:'/operations',meta:{}} as Parameters<typeof authGuard>[0])).toBe(true)
+})
+it('待审核和未通过账号只能进入申请状态页',async()=>{
+ vi.mocked(sessionToken).mockReturnValue('pending-token')
+ for(const status of ['pending','rejected'] as const){
+  vi.mocked(authApi.me).mockResolvedValue({id:'pending',name:'申请人',role:'user',status})
+  expect(await authGuard({meta:{}})).toEqual({name:'application-status'})
+  expect(await authGuard({meta:{layout:'account'}})).toBe(true)
+ }
+})
+it('已开通账号离开申请状态页，停用账号回到登录页',async()=>{
+ vi.mocked(sessionToken).mockReturnValue('token')
+ vi.mocked(authApi.me).mockResolvedValue({id:'approved',name:'员工',role:'kitchen',status:'active'})
+ expect(await authGuard({meta:{layout:'account'}})).toEqual({name:'operations'})
+ vi.mocked(authApi.me).mockResolvedValue({id:'disabled',name:'员工',role:'user',status:'disabled'})
+ expect(await authGuard({meta:{}})).toEqual({name:'login'})
+ expect(clearSession).toHaveBeenCalled()
 })

@@ -19,7 +19,7 @@ from app.services.vectorstore.index_manager import IndexManager, get_index_manag
 
 
 @pytest.fixture()
-def client(tmp_path):
+def client(tmp_path,request):
     engine = create_engine('sqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
 
     @event.listens_for(engine, 'connect')
@@ -49,7 +49,10 @@ def client(tmp_path):
             db.add(KnowledgeBase(id=kb_id, name=name))
         db.commit()
     storage = LocalFileStorage(tmp_path / 'uploads', max_bytes=1024)
-    app = create_app()
+    # Historical business tests explicitly use the compatibility surface. New role
+    # boundary tests parameterize this fixture with False to exercise production.
+    app = create_app(legacy_compatibility=getattr(request,'param',True))
+    app.state.test_factory=factory
 
     def database():
         with factory() as db:
@@ -71,7 +74,8 @@ def client(tmp_path):
         from app.models.auth import Account
         from sqlalchemy import select
         with factory() as db:
-            db.scalar(select(Account).where(Account.phone=='13800000000')).role='admin'
+            account=db.scalar(select(Account).where(Account.phone=='13800000000'))
+            account.role='admin';account.status='active'
             db.commit()
         login = test_client.post('/api/auth/login', json={'phone':'13800000000','password':'Test12345'})
         assert login.status_code == 200, login.text

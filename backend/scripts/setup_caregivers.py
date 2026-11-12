@@ -21,12 +21,12 @@ def provision(db, apply=False):
     if admin is None:
         raise ValueError('请先创建管理员账号')
     # Lock caregiver accounts before residents, matching assignment validation order.
-    staff = list(db.scalars(select(Account).where(Account.role == 'user').order_by(Account.id).with_for_update()))
+    staff = list(db.scalars(select(Account).where(Account.role == 'user',Account.status=='active').order_by(Account.id).with_for_update()))
     new = []
     for phone, name in ACCOUNTS:
         existing = db.scalar(select(Account).where(Account.phone == phone).with_for_update())
         if existing:
-            if existing.role != 'user' or existing.name != name:
+            if existing.role != 'user' or existing.name != name or existing.status!='active':
                 raise ValueError(f'预设手机号 {phone} 已被其他账号占用，未修改任何数据')
             continue
         password = 'Care9' + secrets.token_hex(6)

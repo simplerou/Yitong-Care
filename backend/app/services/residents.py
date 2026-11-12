@@ -8,7 +8,7 @@ from app.schemas.resident import ResidentInput
 FIELDS = tuple(key for key in ResidentInput.model_fields if key != 'assigned_account_ids')
 
 def scope(account):
-    if account.role == 'admin': return True
+    if account.role in ('admin','nursing','medical'): return True
     if account.role != 'user': return False
     return exists(select(ResidentAssignment.resident_id).where(ResidentAssignment.resident_id==Resident.id,ResidentAssignment.account_id==account.id))
 
@@ -30,7 +30,7 @@ def snapshot(db,row):
 
 def validate_assignees(db, ids):
     if ids:
-        found=set(db.scalars(select(Account.id).where(Account.id.in_(ids),Account.role=='user').with_for_update()))
+        found=set(db.scalars(select(Account.id).where(Account.id.in_(ids),Account.role=='user',Account.status=='active').with_for_update()))
         if found != set(ids): raise HTTPException(422,'负责人员必须是现有护工账号，请刷新人员列表')
 
 def assign(db,key,ids):
@@ -58,8 +58,9 @@ def create(db,data,account):
     return detail(db,row)
 
 def edit(db,key,data,account):
+    if account.role not in ('admin','nursing'):raise HTTPException(403,'护工仅可执行、记录和上报，不能编辑老人资料')
     row=require(db,key,account)
-    if account.role != 'admin' and set(data.assigned_account_ids) != set(detail(db,row)['assigned_account_ids']):
+    if account.role not in ('admin','nursing') and set(data.assigned_account_ids) != set(detail(db,row)['assigned_account_ids']):
         raise HTTPException(403,'护工不能调整负责人员，请联系管理员')
     validate_assignees(db,data.assigned_account_ids)
     before=snapshot(db,row)
@@ -67,13 +68,14 @@ def edit(db,key,data,account):
     result=db.execute(update(Resident).where(Resident.id==key,scope(account),Resident.version==data.version).values(**values,version=data.version+1).execution_options(synchronize_session=False))
     if result.rowcount != 1:
         db.rollback();raise HTTPException(409,'档案已被其他人更新，请重新加载后核对修改')
-    if account.role == 'admin': assign(db,key,data.assigned_account_ids)
+    if account.role in ('admin','nursing'): assign(db,key,data.assigned_account_ids)
     db.refresh(row)
     db.add(ResidentChange(id=str(uuid4()),resident_id=key,actor_id=account.id,actor_name=account.name,reason=data.change_reason,before=before,after=snapshot(db,row)))
     db.commit();db.refresh(row)
     return detail(db,row)
 
 def edit_care(db,key,data,account):
+    if account.role not in ('admin','nursing'):raise HTTPException(403,'护工不能编辑照护资料，请上报异常')
     row=require(db,key,account)
     before=snapshot(db,row)
     values=data.model_dump(exclude={'version','change_reason'})

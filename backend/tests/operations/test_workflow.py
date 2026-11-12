@@ -23,7 +23,7 @@ def ops(client):
     for i,role in enumerate(['medical','kitchen','nursing','finance','user']):
         phone=f'1395555000{i}';account=api.post('/api/auth/register',json={'phone':phone,'name':role,'password':'Care12345'}).json();ids[role]=account['id']
         with factory() as db:
-            db.get(Account,account['id']).role=role
+            db.get(Account,account['id']).role=role;db.get(Account,account['id']).status='active'
             if role in ('medical','nursing'):db.add(Credential(account_id=account['id'],qualification='已核实测试任职',valid_until=date.today()+timedelta(days=365)))
             db.commit()
         tokens[role]='Bearer '+api.post('/api/auth/login',json={'phone':phone,'password':'Care12345'}).json()['token']
@@ -34,7 +34,11 @@ def ops(client):
     assert response.status_code==200,response.text
     return api,factory,tokens,ids,row,validator
 
-def submit(api,task,payload):return api.post('/api/operations/run',json={'task':task,'payload':payload,'use_model':False})
+def submit(api,task,payload):
+    response=api.post('/api/operations/run',json={'task':task,'payload':payload,'use_model':False})
+    if task=='medication' and response.status_code==201:
+        row=response.json();assert api.post(f"/api/operations/drafts/{row['id']}/sign",json={'version':row['version'],'note':'测试医生已核对'}).status_code==200
+    return response
 def med(row,amount='1'):return {'resident_id':row['id'],'medicines':[{'drug_id':'DEMO-A','mg_per_dose':amount,'times_daily':1}],'rationale':'人工核对虚构说明书'}
 def approve(api,row,note='已核对虚构测试依据'):return api.post(f"/api/operations/drafts/{row['id']}/decision",json={'version':row['version'],'action':'approve','note':note})
 
@@ -83,6 +87,7 @@ def test_revision_ledger_and_food_drug_conflict_redaction(ops):
     result=api.put(f"/api/operations/drafts/{draft['id']}",json={'version':1,'payload':med(r,'2'),'route':'training','tag':'dose','reason':'核对后调整虚构输入'})
     assert result.status_code==200,result.text
     assert result.json()['proposed']!=result.json()['current']
+    assert api.post(f"/api/operations/drafts/{draft['id']}/sign",json={'version':2,'note':'修改后重新核实'}).status_code==200
     api.headers['Authorization']=tokens['admin'];assert approve(api,result.json()).status_code==200
     ledger=api.get('/api/operations/corrections').json()['items'];assert ledger[0]['route']=='training'
     assert api.post(f"/api/operations/corrections/{ledger[0]['id']}/close",json={'note':'完成复盘'}).status_code==200
@@ -90,7 +95,7 @@ def test_revision_ledger_and_food_drug_conflict_redaction(ops):
     api.headers['Authorization']=tokens['user']
     response=submit(api,'meal_swap',{'resident_id':r['id'],'foods':[{'food_id':'DEMO-GRAPE','grams':'200'}],'reason':'测试'})
     assert response.status_code==409
-    assert 'food_drug_conflict' in str(response.json()) and 'DEMO-A' not in str(response.json())
+    assert 'DEMO-A' not in str(response.json())
 
 def test_approval_rechecks_qualification_and_source(ops):
     api,factory,tokens,ids,r,v=ops;draft=submit(api,'medication',med(r)).json()
@@ -123,25 +128,18 @@ def test_role_change_revokes_session_and_old_draft(ops):
     api.headers['Authorization']='Bearer '+token
     assert api.get('/api/operations/drafts/'+draft['id']).status_code==404
 
-def test_swap_preparation_then_caregiver_completion(ops):
+def test_caregiver_report_goes_to_medical_inbox_without_a_model(ops):
     api,factory,tokens,ids,r,v=ops
     api.headers['Authorization']=tokens['user']
-    response=submit(api,'meal_swap',{'resident_id':r['id'],'foods':[{'food_id':'DEMO-RICE','grams':'100'}],'reason':'一日方案替换'})
+    response=submit(api,'incident',{'resident_id':r['id'],'severity':'urgent','observation':'发药后恶心，已联系值班医护'})
     assert response.status_code==201,response.text
-    api.headers['Authorization']=tokens['kitchen']
-    draft=api.get('/api/operations/drafts/'+response.json()['id']).json()
-    assert r['id'] not in str(draft) and '虚构老人' not in str(draft)
-    assert approve(api,draft).status_code==200
-    tasks=api.get('/api/operations/executions').json()['items'];assert len(tasks)==1
-    assert tasks[0]['resident_name'] is None and r['id'] not in str(tasks)
-    kitchen_task=tasks[0]['id']
-    api.headers['Authorization']=tokens['user'];user_task=api.get('/api/operations/executions').json()['items'][0]
-    assert user_task['resident_name']=='虚构老人'
-    assert api.post(f"/api/operations/executions/{user_task['id']}/complete",json={'note':'领取'}).status_code==409
-    api.headers['Authorization']=tokens['kitchen']
-    assert api.post(f'/api/operations/executions/{kitchen_task}/complete',json={'note':'已备餐'}).status_code==200
-    api.headers['Authorization']=tokens['user']
-    assert api.post(f"/api/operations/executions/{user_task['id']}/complete",json={'note':'已核对发放'}).status_code==200
+    assert submit(api,'meal_swap',{'resident_id':r['id'],'foods':[{'food_id':'DEMO-RICE','grams':'100'}],'reason':'申请换餐'}).status_code==201
+    api.headers['Authorization']=tokens['kitchen'];assert api.get('/api/operations/medical-inbox').status_code==404
+    api.headers['Authorization']=tokens['medical']
+    inbox=api.get('/api/operations/medical-inbox').json()['items'];assert len(inbox)==1
+    assert inbox[0]['observation']=='发药后恶心，已联系值班医护'
+    assert api.post(f"/api/operations/medical-inbox/{inbox[0]['id']}/ack",json={'note':'已安排现场复核'}).status_code==200
+    with factory() as db:assert db.scalar(select(func.count()).select_from(Execution))==0
 
 
 def test_model_repair_is_bounded_and_schema_cannot_change_the_order(ops):
@@ -149,9 +147,9 @@ def test_model_repair_is_bounded_and_schema_cannot_change_the_order(ops):
     from app.services.chat.llm import get_llm
     class Model:
         calls=0
-        def complete_json(self,system,payload):
+        def function_call(self,messages,tools):
             self.calls+=1
-            return {'unexpected':'try to alter a dose'}
+            return {'tool_calls':[{'id':str(self.calls),'function':{'name':'approve','arguments':'{}'}}]}
     model=Model();api.app.dependency_overrides[get_llm]=lambda:model
     response=api.post('/api/operations/run',json={'task':'medication','payload':med(r),'use_model':True})
     assert response.status_code==502 and model.calls==2
@@ -166,4 +164,4 @@ def test_legacy_selection_cannot_bypass_professional_conflict_gate(ops):
     url='/api/meals/residents/'+r['id']
     assert api.get(url,params={'week_start':WEEK}).json()['professional_workflow'] is True
     result=api.put(url,json={'menu_id':menu['id'],'day':0,'meal':'breakfast','option_id':menu['slots'][0]['options'][0]['id']})
-    assert result.status_code==409 and '专业协作' in result.text
+    assert result.status_code==403

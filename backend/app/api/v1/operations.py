@@ -1,7 +1,7 @@
 from datetime import date,timedelta
 from typing import Annotated,Literal
 from uuid import uuid4
-from fastapi import APIRouter,Depends,HTTPException,Query,Response
+from fastapi import APIRouter,Depends,HTTPException,Query,Response,Request
 from sqlalchemy import select,func,delete
 from pydantic import Field
 from app.core.auth import require_account,require_admin
@@ -34,7 +34,7 @@ Validator=Annotated[ValidationClient,Depends(get_validator)]
 @router.get('/identity')
 def card(db:DatabaseSession,actor:Actor):
     value=identity(db,actor)
-    return {'account_id':value.account_id,'name':value.name,'role':value.role,'role_name':ROLES[value.role],'qualified':value.qualified,'tools':value.tools,'tasks':[task for task,role in workflow.TASK_TO_ROLE.items() if role==value.role],'roles':ROLES}
+    return {'account_id':value.account_id,'name':value.name,'role':value.role,'role_name':ROLES[value.role],'qualified':value.qualified,'tools':value.tools,'tasks':[task for task,role in workflow.TASK_TO_ROLE.items() if role==value.role and workflow.TASK_TOOL[task] in value.tools],'roles':ROLES}
 
 @router.get('/staff')
 def staff(db:DatabaseSession,actor:Actor):
@@ -42,18 +42,20 @@ def staff(db:DatabaseSession,actor:Actor):
     if card.role not in ('admin','nursing'):raise HTTPException(404,'不存在或无权')
     if card.role=='nursing':gate(db,actor,'staff_roster')
     result=[]
-    for row in db.scalars(select(Account).where(Account.role.in_(ROLES)).order_by(Account.name)):
+    staff_query=select(Account).where(Account.role.in_(ROLES),Account.status=='active')
+    if card.role=='nursing':staff_query=staff_query.where(Account.role=='user')
+    for row in db.scalars(staff_query.order_by(Account.name)):
         credential=db.get(Credential,row.id)
         result.append({'id':row.id,'name':row.name,'phone_hint':row.phone[:3]+'****'+row.phone[-4:],'role':row.role,'qualification':credential.qualification if credential else '', 'valid_until':credential.valid_until if credential else None})
     return {'items':result}
 
 @router.put('/staff')
 def set_staff(data:StaffInput,db:DatabaseSession,actor:Admin):
-    gate(db,actor,'assign_role')
     # Lock all admin records to serialize last-admin protection.
-    admins=list(db.scalars(select(Account).where(Account.role=='admin').order_by(Account.id).with_for_update()))
+    admins=list(db.scalars(select(Account).where(Account.role=='admin',Account.status=='active').order_by(Account.id).with_for_update()))
     row=db.scalar(select(Account).where(Account.id==data.account_id).with_for_update())
     if not row:raise HTTPException(404,'不存在或无权')
+    if row.status!='active':raise HTTPException(409,'未开通账号请先在注册审核中处理')
     if row.role=='admin' and data.role!='admin' and len(admins)<=1:raise HTTPException(409,'必须保留至少一位院长管理员')
     if data.role in ('medical','nursing') and (not data.qualification or not data.valid_until or data.valid_until<current_date()):raise HTTPException(422,'专业岗位必须登记有效资质及有效期')
     before=row.role;row.role=data.role
@@ -67,7 +69,7 @@ def set_staff(data:StaffInput,db:DatabaseSession,actor:Admin):
 @router.get('/residents')
 def records(db:DatabaseSession,actor:Actor):
     card=identity(db,actor)
-    if card.role not in ('admin','medical','nursing','user'):raise HTTPException(404,'不存在或无权')
+    if card.role not in ('medical','nursing','user'):raise HTTPException(404,'不存在或无权')
     if card.role=='medical':gate(db,actor,'read_record')
     if card.role=='nursing':gate(db,actor,'care_review')
     query=select(Resident).where(Resident.status=='in_care')
@@ -158,8 +160,9 @@ class Completion(Strict):
 def complete(key:str,data:Completion,db:DatabaseSession,actor:Actor,validator:Validator):return service.complete(db,actor,key,data.note,validator)
 
 @router.get('/shifts')
-def shifts(db:DatabaseSession,actor:Actor):
+def shifts(db:DatabaseSession,actor:Actor,request:Request):
     card=identity(db,actor)
+    if card.role=='admin' and not getattr(request.app.state,'legacy_compatibility',False):raise HTTPException(404,'不存在或无权')
     if card.role not in ('admin','nursing','finance','user'):raise HTTPException(404,'不存在或无权')
     if card.role=='nursing':gate(db,actor,'staff_roster')
     query=select(Shift).order_by(Shift.start_at.desc())
@@ -185,6 +188,7 @@ def corrections(db:DatabaseSession,actor:Actor):
     if card.role=='nursing':
         gate(db,actor,'care_review');query=query.join(Draft).where(Draft.kind.in_(['schedule','incident']))
     rows=list(db.scalars(query.limit(200)))
+    if card.role=='admin':return {'items':[{'id':r.id,'draft_id':r.draft_id,'route':r.route,'tag':r.tag,'reason':'专业修正，详情限原专业岗位','before':{},'after':{},'closed':r.closed,'created_at':r.created_at} for r in rows]}
     return {'items':rows}
 class CloseInput(Strict):note:str=Field(min_length=1,max_length=1000)
 @router.post('/corrections/{key}/close')
@@ -195,7 +199,7 @@ def close_correction(key:str,data:CloseInput,db:DatabaseSession,actor:Admin):
 
 @router.get('/dashboard')
 def dashboard(db:DatabaseSession,actor:Actor):
-    gate(db,actor,'dashboard')
+    gate(db,actor,'view_validation')
     rows=list(db.scalars(select(Draft)))
     approved=[r for r in rows if r.status=='approved']
     adopted=sum(r.current==r.proposed for r in approved)
@@ -208,7 +212,9 @@ def dashboard(db:DatabaseSession,actor:Actor):
     return {'tool_success_rate':round(tool_ok/(tool_ok+tool_bad),4) if tool_ok+tool_bad else None,'tool_successes':tool_ok,'tool_failures':tool_bad,'drafts':len(rows),'pending':sum(r.status=='pending' and r.expires_at>now for r in rows),'approved':len(approved),'unchanged_adoption':round(adopted/len(approved),4) if approved else None,'closed_corrections':db.scalar(select(func.count()).select_from(Correction).where(Correction.closed.is_(True))),'open_corrections':db.scalar(select(func.count()).select_from(Correction).where(Correction.closed.is_(False))),'periods':stats,'gateway_denials':sum(e.action.endswith('denied') for e in events),'validation_blocks':sum(e.action=='validation_blocked' for e in events),'notice':'采纳率仅按已批准草稿统计；无样本时未知。没有把演示数据当作生产效果指标。'}
 
 @router.get('/audit')
-def audit(db:DatabaseSession,actor:Admin):return {'items':list(db.scalars(select(Event).order_by(Event.created_at.desc()).limit(200)))}
+def audit(db:DatabaseSession,actor:Admin):
+    rows=db.scalars(select(Event).order_by(Event.created_at.desc()).limit(200)).all()
+    return {'items':[{'id':r.id,'action':r.action,'created_at':r.created_at,'object_id':'' if r.action in ('clinical_profile_reviewed','clinical_orders_applied') else r.object_id,'data':{'redacted':True} if r.action in ('clinical_profile_reviewed','clinical_orders_applied') else r.data} for r in rows]}
 
 class ReferenceInput(Strict):
     drug_id:str=Field(min_length=1,max_length=80)
@@ -238,3 +244,66 @@ def retrieve_drug(drug_id:str,query:Annotated[str,Query(min_length=1,max_length=
     from app.operations.evidence import retrieve
     rows=retrieve(db,drug_id,query,category,on_date,embedder if hybrid else None,manager if hybrid else None)
     return {'hits':rows,'drug_id':drug_id,'category':category,'on_date':on_date or current_date(),'strategy':'embedding_bm25_rrf' if hybrid else 'bm25'}
+
+class SignatureInput(Strict):
+    version:int=Field(ge=1)
+    note:str=Field(min_length=1,max_length=1000)
+@router.post('/drafts/{key}/sign')
+def sign_medication(key:str,data:SignatureInput,db:DatabaseSession,actor:Actor,validator:Validator):
+    return service.serialize(db,actor,service.sign_medication(db,actor,key,data.version,data.note,validator))
+
+class MedicalAssistantInput(Strict):
+    resident_id:str=Field(min_length=1,max_length=36)
+    text:str=Field(min_length=1,max_length=2000)
+class KitchenAssistantInput(Strict):
+    text:str=Field(min_length=1,max_length=2000)
+
+def assistant(db,actor,kind,text,validator,llm,embedder,manager,resident_id=None):
+    from app.operations.react import run_react
+    from app.operations.budget import start,reset,remaining
+    token=start()
+    try:
+        role=identity(db,actor).role
+        if role!=('medical' if kind=='medication' else 'kitchen'):raise HTTPException(404,'不存在或无权')
+        from app.operations.supervisor import dispatch
+        payload,summary,trace=dispatch(db,actor,{role:lambda:run_react(db,actor,kind,text,validator,llm,resident_id=resident_id)})
+        remaining()
+        if payload is None:
+            from fastapi.responses import JSONResponse
+            db.commit();return JSONResponse(status_code=200,content={'response_type':'answer','answer':summary,'trace':trace,'draft_created':False})
+        row=workflow.run(db,actor,RunInput(task=kind,payload=payload,use_model=False),validator,llm,embedder,manager)
+        row.trace=[{'node':'identity_supervisor','agent':role}]+trace+[{'node':'react_summary','summary':summary}]+row.trace
+        event(db,actor,'react_draft_prepared',row.id,role=role,tool_calls=len(trace))
+        db.commit();return service.serialize(db,actor,row)
+    finally:reset(token)
+
+@router.post('/assistant/medical',status_code=201)
+def medical_assistant(data:MedicalAssistantInput,db:DatabaseSession,actor:Actor,validator:Validator,llm:Annotated[QwenClient,Depends(get_llm)],embedder:Model,manager:Manager):
+    return assistant(db,actor,'medication',data.text,validator,llm,embedder,manager,data.resident_id)
+@router.post('/assistant/kitchen',status_code=201)
+def kitchen_assistant(data:KitchenAssistantInput,db:DatabaseSession,actor:Actor,validator:Validator,llm:Annotated[QwenClient,Depends(get_llm)],embedder:Model,manager:Manager):
+    return assistant(db,actor,'menu',data.text,validator,llm,embedder,manager)
+
+@router.get('/medical-inbox')
+def medical_inbox(db:DatabaseSession,actor:Actor):
+    gate(db,actor,'receive_incident')
+    from app.operations.models import MedicalInbox
+    rows=db.scalars(select(MedicalInbox).order_by(MedicalInbox.created_at.desc()).limit(200)).all()
+    return {'items':[{'id':row.id,'draft_id':row.draft_id,'resident_id':row.resident_id,'resident_name':db.get(Resident,row.resident_id).name,'severity':row.severity,'observation':row.observation,'status':row.status,'handling_note':row.handling_note,'created_at':row.created_at} for row in rows]}
+@router.post('/medical-inbox/{key}/ack')
+def acknowledge_incident(key:str,data:Completion,db:DatabaseSession,actor:Actor):
+    gate(db,actor,'receive_incident')
+    from app.operations.models import MedicalInbox
+    row=db.scalar(select(MedicalInbox).where(MedicalInbox.id==key).with_for_update())
+    if not row:raise HTTPException(404,'不存在或无权')
+    row.status='handled';row.handled_by=actor.id;row.handling_note=data.note
+    source=db.get(Draft,row.draft_id)
+    # Clinical acknowledgement is distinct from the nursing care-review decision.
+    event(db,actor,'medical_incident_acknowledged',row.id);db.commit();return {'status':row.status}
+
+@router.get('/drafts/{key}/cost')
+def draft_cost(key:str,db:DatabaseSession,actor:Actor):
+    gate(db,actor,'view_cost')
+    row=service.draft(db,actor,key)
+    result=service.serialize(db,actor,row)
+    return {'draft_id':row.id,'cost':result['validation'].get('cost',{}),'calculation':result['calculation']}

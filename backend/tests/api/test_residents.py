@@ -1,3 +1,4 @@
+from tests.accounts import activate
 from uuid import uuid4
 from sqlalchemy import select
 from app.models.resident import Resident, ResidentChange
@@ -6,6 +7,7 @@ from app.models.auth import Account
 
 def staff(api, phone='13912340001'):
     assert api.post('/api/auth/register',json={'phone':phone,'name':'护理员','password':'Care12345'}).status_code==201
+    activate(api,phone)
     result=api.post('/api/auth/login',json={'phone':phone,'password':'Care12345'}).json()
     return result['user']['id'],'Bearer '+result['token']
 

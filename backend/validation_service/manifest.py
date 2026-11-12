@@ -16,6 +16,7 @@ class Drug(Strict):
     name:str=Field(min_length=1,max_length=200)
     ingredients:list[str]=Field(min_length=1,max_length=50)
     allergens:list[str]=[]
+    cost_per_mg_cny:Decimal|None=Field(default=None,ge=0)
     max_single_mg:Decimal=Field(gt=0,le=100000)
     max_daily_mg:Decimal=Field(gt=0,le=1000000)
     evidence:Evidence
@@ -24,6 +25,7 @@ class Food(Strict):
     name:str=Field(min_length=1,max_length=200)
     ingredients:list[str]=Field(min_length=1,max_length=50)
     allergens:list[str]=Field(max_length=50)
+    cost_per_100g_cny:Decimal|None=Field(default=None,ge=0)
     energy:Decimal=Field(ge=0,le=1000)
     protein:Decimal=Field(ge=0,le=100)
     sodium:Decimal=Field(ge=0,le=100000)

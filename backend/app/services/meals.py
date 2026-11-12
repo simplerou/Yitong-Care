@@ -93,7 +93,7 @@ def choices(db,actor,week,resident_id=None):
     from app.operations.models import ClinicalProfile
     professional=db.get(ClinicalProfile,resident.id) is not None
     row=db.scalar(select(WeeklyMenu).where(WeeklyMenu.week_start==week,WeeklyMenu.status=='published'))
-    if not row:return {'menu':None,'resident_name':resident.name,'reviewed':reviewed(resident,profile),'slots':[],'professional_workflow':professional}
+    if not row:return {'menu':None,'resident_name':resident.name,'reviewed':reviewed(resident,profile),'slots':[],'caregiver_readonly':actor.role=='user','professional_workflow':professional}
     selected={(s.meal_date,s.meal):s for s in db.scalars(select(MealSelection).where(MealSelection.resident_id==resident.id,MealSelection.menu_id==row.id))}
     counts=dict(db.execute(select(MealSelection.option_id,func.count()).join(Resident,Resident.id==MealSelection.resident_id).where(MealSelection.menu_id==row.id,Resident.status=='in_care').group_by(MealSelection.option_id)).all())
     slots=[]
@@ -106,10 +106,11 @@ def choices(db,actor,week,resident_id=None):
             used=counts.get(o['id'],0)
             options.append({**o,'reasons':why,'remaining':max(0,o['capacity']-used)})
         slots.append({**slot,'date':meal_date,'closed':now()>=deadline(row,slot),'options':options,'selection':{'option_id':pick.option_id,'version':pick.version,'needs_review':pick.profile_version!=(profile.version if profile else 0) or pick.resident_version!=resident.version} if pick else None})
-    return {'menu':{'id':row.id,'week_start':row.week_start,'version':row.version},'resident_name':resident.name,'reviewed':reviewed(resident,profile),'in_care':resident.status=='in_care','slots':slots,'professional_workflow':professional}
+    return {'menu':{'id':row.id,'week_start':row.week_start,'version':row.version},'resident_name':resident.name,'reviewed':reviewed(resident,profile),'in_care':resident.status=='in_care','slots':slots,'caregiver_readonly':actor.role=='user','professional_workflow':professional}
 def select_meal(db,data,actor,resident_id=None):
     row=get_menu(db,str(data.menu_id),True)
     if row.status!='published':raise HTTPException(409,'菜单尚未发布')
+    if actor.role=='user':raise HTTPException(403,'护工不能修改套餐，请上报需要调整餐食的情况')
     resident=meal_resident(db,actor,resident_id,True)
     from app.operations.models import ClinicalProfile
     if db.get(ClinicalProfile,resident.id):raise HTTPException(409,'该老人已启用专业协作校验，请通过岗位协作提交餐食调整，不能跳过食药冲突校验')

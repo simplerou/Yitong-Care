@@ -19,7 +19,7 @@ def test_database_password_is_encoded_and_masked():
 
 def test_models_compile_for_mysql_with_chinese_search_and_embedding():
     assert set(Base.metadata.tables) == {
-        "ops_drug_reference", "ops_credential", "ops_clinical_profile", "ops_constraint", "ops_draft", "ops_execution", "ops_correction", "ops_event", "ops_shift",
+        "ops_medical_inbox", "ops_drug_reference", "ops_credential", "ops_clinical_profile", "ops_constraint", "ops_draft", "ops_execution", "ops_correction", "ops_event", "ops_shift",
         "knowledge_base", "knowledge_document", "document_chunk", "vector_index", "embedding_task", "retrieval_log", "retrieval_hit",
         "policy_conversation", "policy_turn", "health_conversation", "health_turn",
         "medication_conversation", "medication_turn",

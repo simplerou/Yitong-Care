@@ -19,7 +19,7 @@ def current(db,resident_id):
     return {'id':account.id,'name':account.name,'phone_hint':account.phone[:3]+'****'+account.phone[-4:]} if account else None
 
 def candidates(db,q,page,page_size):
-    filters=[Account.role.in_(['user','resident']),~exists(select(ResidentAccountBinding.account_id).where(ResidentAccountBinding.account_id==Account.id)),~exists(select(ResidentAssignment.account_id).where(ResidentAssignment.account_id==Account.id))]
+    filters=[Account.status=='active',Account.role.in_(['user','resident']),~exists(select(ResidentAccountBinding.account_id).where(ResidentAccountBinding.account_id==Account.id)),~exists(select(ResidentAssignment.account_id).where(ResidentAssignment.account_id==Account.id))]
     if q:
         pattern='%'+q.replace('\\','\\\\').replace('%','\\%').replace('_','\\_')+'%'
         filters.append(Account.name.ilike(pattern,escape='\\') | Account.phone.ilike(pattern,escape='\\'))
@@ -37,6 +37,7 @@ def set_binding(db,resident_id,account_id,version,reason,actor):
     if account_id:
         target=db.scalar(select(Account).where(Account.id==account_id).with_for_update().execution_options(populate_existing=True))
         if target is None:raise HTTPException(404,'账号不存在')
+        if target.status!='active':raise HTTPException(422,'账号尚未开通')
         if target.role not in ('user','resident'):raise HTTPException(422,'管理员账号不能绑定为老人账号')
         other=db.scalar(select(ResidentAccountBinding).where(ResidentAccountBinding.account_id==account_id).with_for_update())
         if other and other.resident_id!=resident_id:raise HTTPException(409,'该账号已绑定其他老人，请先核实并解绑')

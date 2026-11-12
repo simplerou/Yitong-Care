@@ -1,6 +1,6 @@
 import { request } from './http'
 export interface Identity {account_id:string;name:string;role:string;role_name:string;qualified:boolean;tools:string[];tasks:string[];roles:Record<string,string>}
-export interface Draft {resident_name?:string|null;calculation?:Record<string,any>;id:string;kind:string;status:string;risk:number;version:number;proposed:Record<string,any>;current:Record<string,any>;validation:Record<string,any>;trace:Record<string,any>[];expires_at:string;decision_note:string;can_approve:boolean;can_edit:boolean;owner_id:string;created_at:string}
+export interface Draft {professional_signoff?:{signed:boolean;signed_at:string}|null;can_sign?:boolean;was_modified?:boolean;resident_name?:string|null;calculation?:Record<string,any>;id:string;kind:string;status:string;risk:number;version:number;proposed:Record<string,any>;current:Record<string,any>;validation:Record<string,any>;trace:Record<string,any>[];expires_at:string;decision_note:string;can_approve:boolean;can_edit:boolean;owner_id:string;created_at:string}
 export const ops={
  identity:()=>request<Identity>('/operations/identity'),
  list:<T=any>(resource:string)=>request<{items:T[]}>(`/operations/${resource}`),

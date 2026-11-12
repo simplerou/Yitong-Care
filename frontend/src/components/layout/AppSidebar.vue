@@ -1,39 +1,17 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { isAdmin, isResident, isCaregiver, currentAccount, authApi } from '../../api/auth'
-import { useRoute } from 'vue-router'
-import { menuGroups } from '../../config/menu'
-import { useKnowledgeStore } from '../../stores/knowledge'
-import { useRetrievalStore } from '../../stores/retrieval'
-import { useOverlay } from '../../composables/useOverlay'
-const route = useRoute(), ui = useOverlay()
-const knowledge = useKnowledgeStore(), retrieval = useRetrievalStore()
-const isProfessional = computed(()=>['medical','kitchen','nursing','finance'].includes(currentAccount.value?.role || ''))
-const roleNames:Record<string,string>={medical:'医务室',kitchen:'食堂',nursing:'护理部',finance:'财务部',user:'护工'}
-const visibleGroups = computed(() => menuGroups.map(group => ({...group, items: group.items.filter(item => (!isProfessional.value || item.name==='operations') && (!item.meta?.adminOnly || isAdmin.value) && (!item.meta?.staffOnly || !isResident.value) && (!item.meta?.residentOnly || isResident.value))})).filter(group => group.items.length))
-const avatarInitial = computed(() => currentAccount.value?.name?.trim().slice(0,1) || '护')
-async function logout(){try{await authApi.logout()}finally{window.location.hash='/login';window.location.reload()}}
-function count(name: unknown) { if (name === 'kb') return knowledge.error ? '—' : knowledge.stats.documents; if (name === 'chunk') return knowledge.error ? '—' : knowledge.stats.chunks; if (name === 'vector') return knowledge.error ? '—' : knowledge.stats.vectors; if (name === 'records') return retrieval.logsError ? '—' : retrieval.total; return null }
+import {computed} from 'vue'
+import {useRoute} from 'vue-router'
+import {authApi,currentAccount} from '../../api/auth'
+import {roleNavigation,roleNames,type RoleLink} from '../../config/roleNavigation'
+const route=useRoute()
+const links=computed(()=>roleNavigation[currentAccount.value?.role||'']||[])
+const roleName=computed(()=>roleNames[currentAccount.value?.role||'']||'工作台')
+const avatarInitial=computed(()=>currentAccount.value?.name?.trim().slice(0,1)||'禾')
+function destination(link:RoleLink){return {path:link.path,query:{...(link.tab?{tab:link.tab}:{}),...(link.task?{task:link.task}:{})}}}
+function active(link:RoleLink){if(link.path==='/residents')return route.path.startsWith('/residents');return route.path===link.path&&(!link.tab||String(route.query.tab|| (currentAccount.value?.role==='admin'?'dashboard':'tasks'))===link.tab)&&(!link.task||String(route.query.task||'incident')===link.task)}
+async function logout(){try{await authApi.logout()}catch{}finally{window.location.hash='/login';window.location.reload()}}
 </script>
-<template>
-<aside v-if="isCaregiver || isProfessional" id="sidebar" class="sidebar caregiver-sidebar">
-  <div class="caregiver-scroll">
-    <section class="caregiver-identity" aria-label="当前护工账号">
-      <div class="caregiver-avatar" aria-hidden="true">{{ avatarInitial }}</div>
-      <h2>{{ currentAccount?.name || '护工' }}</h2>
-      <span class="caregiver-role"><span></span>{{ roleNames[currentAccount?.role||'user'] }}工作台</span>
-    </section>
-    <div class="caregiver-note"><AppIcon name="shield" :size="20"/><div><b>用心照护每一位老人</b><p>从档案核对开始，做好日常照护。</p></div></div>
-    <nav class="caregiver-nav" aria-label="护工业务导航">
-      <RouterLink v-if="isCaregiver" to="/operations" class="caregiver-nav-item" :class="{selected:route.path==='/operations'}" :aria-current="route.path==='/operations'?'page':undefined" title="工作概览"><AppIcon name="home" :size="21"/><span>工作概览</span></RouterLink>
-      <RouterLink v-if="isCaregiver" to="/residents" class="caregiver-nav-item" :class="{selected:route.path.startsWith('/residents')}" :aria-current="route.path.startsWith('/residents')?'page':undefined" title="负责老人"><AppIcon name="clipboard" :size="21"/><span>负责老人</span></RouterLink>
-      <RouterLink v-if="isProfessional" to="/operations" class="caregiver-nav-item" :class="{selected:route.path==='/operations'}" :aria-current="route.path==='/operations'?'page':undefined" title="岗位协作"><AppIcon name="shield" :size="21"/><span>岗位协作</span></RouterLink>
-    </nav>
-  </div>
-  <div class="caregiver-footer"><span class="caregiver-footer-note">养老院 · 照护服务</span><button type="button" class="caregiver-nav-item" title="退出登录" @click="logout"><AppIcon name="arrow" :size="20"/><span>退出登录</span></button></div>
-</aside>
-<aside v-else id="sidebar" class="sidebar"><nav class="side-scroll" aria-label="主导航"><div v-for="group in visibleGroups" :key="group.title" class="side-group"><div class="side-label">{{ group.title }}</div><RouterLink v-for="item in group.items" :key="item.path" class="nav-item" :class="{active: route.path === item.path}" :to="item.path" :style="{'--tint': String(item.meta?.tint || ''), '--c': String(item.meta?.color || '')}"><span class="nav-ico"><AppIcon :name="String(item.meta?.icon)" :size="16"/></span><span class="nav-txt">{{ item.name==='residents' && isCaregiver ? '负责老人' : item.meta?.title }}</span><span v-if="count(item.name) !== null" class="nav-num">{{ count(item.name) }}</span></RouterLink></div></nav><div class="side-foot"><div v-if="isAdmin" class="engine-card"><div class="engine-head"><span class="live-dot"></span>知识库管理</div><p>{{ knowledge.error ? '后端暂不可用' : `文档 ${knowledge.stats.documents} 份 · 文本块 ${knowledge.stats.chunks} 段` }}<br>混合检索 · 岗位协作与审批</p><div class="engine-bars"><i v-for="n in 6" :key="n"></i></div></div><button class="side-help" @click="ui.open({kind:'help', title:'原型使用说明', subtitle:'禾龄通 · 智能养老服务平台 v0.1'})"><AppIcon name="info" :size="13"/> 使用说明 / 菜单地图</button></div></aside></template>
-
+<template><aside id="sidebar" class="sidebar caregiver-sidebar"><div class="caregiver-scroll"><section class="caregiver-identity" aria-label="当前岗位账号"><div class="caregiver-avatar" aria-hidden="true">{{ avatarInitial }}</div><h2>{{ currentAccount?.name||'欢迎您' }}</h2><span class="caregiver-role"><span></span>{{ roleName }}工作台</span></section><div class="caregiver-note"><AppIcon name="shield" :size="20"/><div><b>各司其职，照护相连</b><p>只展示当前岗位的职责功能。</p></div></div><nav class="caregiver-nav" :aria-label="roleName+'业务导航'"><RouterLink v-for="link in links" :key="link.label" :to="destination(link)" class="caregiver-nav-item" :class="{selected:active(link)}" :aria-current="active(link)?'page':undefined" :title="link.label"><AppIcon :name="link.icon" :size="21"/><span>{{ link.label }}</span></RouterLink></nav></div><div class="caregiver-footer"><span class="caregiver-footer-note">禾龄通 · 六岗位协作</span><button type="button" class="caregiver-nav-item" title="退出登录" @click="logout"><AppIcon name="arrow" :size="20"/><span>退出登录</span></button></div></aside></template>
 <style scoped>
 .caregiver-sidebar{width:264px;background:#fafbfe;border-right:1px solid var(--line);}
 .caregiver-scroll{flex:1;min-height:0;overflow-y:auto;padding:32px 20px 20px;}

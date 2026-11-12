@@ -24,3 +24,5 @@ from app.models.meals import WeeklyMenu, MealProfile, MealSelection, MealChange
 
 from app.operations.models import Credential, ClinicalProfile, ConstraintToken, Draft, Execution, Correction, Event, Shift
 from app.operations.models import DrugReference
+
+from app.operations.models import MedicalInbox

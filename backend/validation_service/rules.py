@@ -76,4 +76,13 @@ def evaluate(request:CheckRequest,facts:dict):
             if nutrients['protein']<patient.protein_min:issue('protein_target')
             if nutrients['sodium']>patient.sodium_max:issue('sodium_limit')
     if request.kind=='medication' and not request.medicines:issue('medicines_required')
-    return {'passed':not problems,'rule_version':facts['version'],'graph_hash':sha256(json.dumps(canonical(facts),sort_keys=True,ensure_ascii=False).encode()).hexdigest(),'demo':bool(facts.get('demo')),'issues':problems,'paths':paths,'references':list({e['id']:e for e in refs}.values()),'nutrition_references':nutrition_refs,'calculations':calculations,'nutrients':{k:str(v) for k,v in nutrients.items()},'risk':3 if request.kind=='medication' else 2}
+    total=Decimal('0');priced=True
+    items=request.medicines if request.kind=='medication' else request.foods
+    for item in items:
+        fact=facts['drugs' if request.kind=='medication' else 'foods'].get(item.drug_id if request.kind=='medication' else item.food_id,{})
+        price=fact.get('cost_per_mg_cny' if request.kind=='medication' else 'cost_per_100g_cny')
+        if price is None:priced=False;continue
+        quantity=item.mg_per_dose*item.times_daily if request.kind=='medication' else item.grams/100
+        total+=Decimal(price)*quantity
+    cost={'complete':priced and bool(items),'amount_cny':str(total.quantize(Decimal('.01'))) if priced and items else None,'basis':'已登记单价的一日估算；不含服务费用，缺失单价不按0处理'}
+    return {'cost':cost,'passed':not problems,'rule_version':facts['version'],'graph_hash':sha256(json.dumps(canonical(facts),sort_keys=True,ensure_ascii=False).encode()).hexdigest(),'demo':bool(facts.get('demo')),'issues':problems,'paths':paths,'references':list({e['id']:e for e in refs}.values()),'nutrition_references':nutrition_refs,'calculations':calculations,'nutrients':{k:str(v) for k,v in nutrients.items()},'risk':3 if request.kind=='medication' else 2}

@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import String, DateTime, ForeignKey
+from sqlalchemy import String, DateTime, ForeignKey, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base, MYSQL_TABLE_OPTIONS
 
@@ -10,6 +10,12 @@ class Account(Base):
     phone: Mapped[str] = mapped_column(String(11), unique=True)
     name: Mapped[str] = mapped_column(String(30))
     role: Mapped[str] = mapped_column(String(16), nullable=False, default="user", server_default="user")
+    status: Mapped[str] = mapped_column(String(16),nullable=False,default='active',server_default='active')
+    requested_role: Mapped[str | None] = mapped_column(String(16),nullable=True)
+    application_note: Mapped[str] = mapped_column(String(500),nullable=False,default='',server_default='')
+    review_note: Mapped[str] = mapped_column(String(1000),nullable=False,default='',server_default='')
+    application_version: Mapped[int] = mapped_column(Integer,nullable=False,default=1,server_default='1')
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime,nullable=True)
     password_hash: Mapped[str] = mapped_column(String(256))
 
 class LoginSession(Base):
