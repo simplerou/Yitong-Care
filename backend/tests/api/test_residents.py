@@ -61,7 +61,7 @@ def test_assignment_is_checked_on_every_request_and_cannot_be_self_granted(clien
     assert api.get('/api/residents').json()['total']==1
     assert api.get('/api/residents/'+key).status_code==200
     assert api.post('/api/residents',json=payload()).status_code==403
-    assert api.put('/api/residents/'+key,json=payload(version=1,change_reason='绕过')).status_code==403
+    assert api.put('/api/residents/'+key,json=payload(version=1,change_reason='绕过',assigned_account_ids=[other])).status_code==403
     assert api.get('/api/residents/assignees').status_code==403
     assert api.get('/api/residents/'+key+'/changes').status_code==403
     api.headers['Authorization']=admin

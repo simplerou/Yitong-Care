@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, delete
 from sqlalchemy.exc import IntegrityError
 from app.core.deps import DatabaseSession
-from app.core.auth import require_account, hash_password, verify_password, token_hash, now, bearer
+from app.core.auth import require_account, require_admin, hash_password, verify_password, token_hash, now, bearer
 from app.models.auth import Account, LoginSession
 from fastapi.security import HTTPAuthorizationCredentials
 
@@ -59,3 +59,10 @@ def me(account=Depends(require_account)):
 def logout(db: DatabaseSession, account=Depends(require_account), credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)]=None):
     db.execute(delete(LoginSession).where(LoginSession.token_hash == token_hash(credentials.credentials)))
     db.commit()
+
+@router.get('/caregivers')
+def caregivers(db:DatabaseSession,account=Depends(require_admin)):
+    from app.models.resident import ResidentAssignment
+    from sqlalchemy import func
+    rows=db.execute(select(Account.id,Account.name,Account.phone,func.count(ResidentAssignment.resident_id)).outerjoin(ResidentAssignment,ResidentAssignment.account_id==Account.id).where(Account.role=='user').group_by(Account.id,Account.name,Account.phone).order_by(Account.name,Account.id)).all()
+    return [{'id':key,'name':name,'phone_hint':phone[:3]+'****'+phone[-4:],'resident_count':count} for key,name,phone,count in rows]

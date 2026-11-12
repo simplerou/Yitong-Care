@@ -1,0 +1,116 @@
+{
+  "version": "demo-2026-11-v1",
+  "demo": true,
+  "drugs": {
+    "DEMO-A": {
+      "id": "DEMO-A",
+      "name": "虚构药品A",
+      "ingredients": [
+        "demo-active-a"
+      ],
+      "allergens": [],
+      "max_single_mg": "10",
+      "max_daily_mg": "20",
+      "evidence": {
+        "id": "demo-insert-a",
+        "section": "1.1",
+        "location": "演示说明书第1段",
+        "quote": "仅自动化演示：单次不超过10单位、每日不超过20单位。",
+        "valid_from": "2026-01-01",
+        "valid_to": null,
+        "source_url": ""
+      }
+    },
+    "DEMO-B": {
+      "id": "DEMO-B",
+      "name": "虚构药品B",
+      "ingredients": [
+        "demo-active-b"
+      ],
+      "allergens": [],
+      "max_single_mg": "5",
+      "max_daily_mg": "10",
+      "evidence": {
+        "id": "demo-insert-b",
+        "section": "1.2",
+        "location": "演示说明书第2段",
+        "quote": "虚构测试规则，禁止用于医疗。",
+        "valid_from": "2026-01-01",
+        "valid_to": null,
+        "source_url": ""
+      }
+    }
+  },
+  "foods": {
+    "DEMO-RICE": {
+      "id": "DEMO-RICE",
+      "name": "演示米饭",
+      "ingredients": [
+        "demo-rice"
+      ],
+      "allergens": [],
+      "energy": "100",
+      "protein": "3",
+      "sodium": "5",
+      "evidence": null
+    },
+    "DEMO-FISH": {
+      "id": "DEMO-FISH",
+      "name": "演示鱼餐",
+      "ingredients": [
+        "demo-fish"
+      ],
+      "allergens": [
+        "demo-fish-allergen"
+      ],
+      "energy": "150",
+      "protein": "20",
+      "sodium": "100",
+      "evidence": null
+    },
+    "DEMO-GRAPE": {
+      "id": "DEMO-GRAPE",
+      "name": "演示冲突水果",
+      "ingredients": [
+        "demo-grape"
+      ],
+      "allergens": [],
+      "energy": "50",
+      "protein": "1",
+      "sodium": "0",
+      "evidence": null
+    }
+  },
+  "conflicts": [
+    {
+      "left": "demo-active-a",
+      "right": "demo-grape",
+      "rule": "demo-food-drug",
+      "evidence": {
+        "id": "demo-rule-1",
+        "section": "R1",
+        "location": "演示规则第1条",
+        "quote": "仅测试：虚构药品A与演示冲突水果禁配。",
+        "valid_from": "2026-01-01",
+        "valid_to": null,
+        "source_url": ""
+      }
+    },
+    {
+      "left": "demo-active-a",
+      "right": "demo-active-b",
+      "rule": "demo-polypharmacy",
+      "evidence": {
+        "id": "demo-rule-2",
+        "section": "R2",
+        "location": "演示规则第2条",
+        "quote": "仅测试：两种虚构活性成分禁配。",
+        "valid_from": "2026-01-01",
+        "valid_to": null,
+        "source_url": ""
+      }
+    }
+  ],
+  "diseases": [],
+  "disease_conflicts": []
+}

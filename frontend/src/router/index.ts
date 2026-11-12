@@ -3,4 +3,4 @@ import { authGuard } from './authGuard'
 import { routes } from './routes'
 export const router = createRouter({ history: createWebHashHistory(), routes, scrollBehavior: () => ({ top: 0 }) })
 router.beforeEach(authGuard)
-router.afterEach(to => { document.title = to.meta.title ? `${to.meta.title} · 颐养通` : '颐养通 · 智能养老服务平台' })
+router.afterEach(to => { document.title = to.meta.title ? `${to.meta.title} · 禾龄通` : '禾龄通 · 智能养老服务平台' })

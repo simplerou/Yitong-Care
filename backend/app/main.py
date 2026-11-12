@@ -19,7 +19,7 @@ async def lifespan(_app: FastAPI):
 
 def create_app() -> FastAPI:
     settings = get_settings()
-    application = FastAPI(title="颐养通 API", version="0.1.0", lifespan=lifespan)
+    application = FastAPI(title="禾龄通 API", version="0.1.0", lifespan=lifespan)
     application.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,

@@ -23,7 +23,7 @@ watch(registering, () => {
 async function submit() {
   if (busy.value) return
   Object.keys(errors).forEach(key => delete errors[key]); notice.value = ''
-  if (registering.value && !form.name.trim()) errors.name = '请填写您的称呼'
+  if (registering.value && !form.name.trim()) errors.name = '请填写护工姓名'
   if (!/^1[3-9]\d{9}$/.test(form.phone.trim())) errors.phone = '请输入正确的 11 位手机号码'
   if (!form.password) errors.password = '请输入密码'
   else if (registering.value && (form.password.length < 8 || !/[A-Za-z]/.test(form.password) || !/\d/.test(form.password))) errors.password = '请使用至少 8 位的字母和数字组合'
@@ -36,11 +36,12 @@ async function submit() {
     if (registering.value) {
       await authApi.register({ name: form.name.trim(), phone: form.phone.trim(), password: form.password })
       await router.push('/login')
-      notice.value = '账号创建成功，请登录。'
+      notice.value = '护工账号创建成功，请登录并联系管理员分配老人。'
     } else {
       const account = await authApi.login(form.phone.trim(), form.password)
+      if(account.role==='resident'){await authApi.logout();throw new Error('老人账号端已停用，请使用护工账号管理老人资料。')}
       form.password = ''
-      window.location.hash = account.role==='resident'?'/my-profile':'/home'
+      window.location.hash = '/operations'
       window.location.reload()
     }
   } catch (error) { notice.value = error instanceof Error ? error.message : '请求失败，请稍后重试' }
@@ -51,35 +52,35 @@ async function submit() {
 <template>
   <div class="auth-page">
     <header class="auth-header">
-      <RouterLink to="/login" class="auth-brand" aria-label="颐养通登录"><span class="auth-logo"><AppIcon name="heart" :size="27" /></span><span><b>颐养通</b><small>YITONG CARE</small></span></RouterLink>
+      <RouterLink to="/login" class="auth-brand" aria-label="禾龄通登录"><span class="auth-logo"><AppIcon name="heart" :size="27" /></span><span><b>禾龄通</b><small>YITONG CARE</small></span></RouterLink>
       <span class="auth-back">智能养老服务平台</span>
     </header>
     <main class="auth-main">
       <section class="auth-story" aria-labelledby="care-heading">
         <div class="auth-eyebrow"><span></span> 智能相伴 · 温暖每一天</div>
         <h1 id="care-heading">让关爱，更懂你。<br><span>让养老，更安心。</span></h1>
-        <p class="auth-intro">从日常健康到生活陪伴，<br>颐养通与您一起，照顾生活中的点点滴滴。</p>
+        <p class="auth-intro">从日常健康到生活陪伴，<br>禾龄通与您一起，照顾生活中的点点滴滴。</p>
         <div class="auth-services"><div v-for="service in services" :key="service.name" class="auth-service"><span><AppIcon :name="service.icon" :size="22" /></span><div><b>{{ service.name }}</b><p>{{ service.text }}</p></div></div></div>
         <div class="auth-story-note"><AppIcon name="heart" :size="18" /> 科技有温度，关爱在身边。</div>
       </section>
       <section class="auth-form-card" :aria-labelledby="registering ? 'register-heading' : 'login-heading'">
-        <div class="auth-card-top"><span class="auth-card-symbol"><AppIcon :name="registering ? 'smile' : 'home'" :size="25" /></span><span>您的智慧养老生活，从这里开始</span></div>
-        <h2 :id="registering ? 'register-heading' : 'login-heading'">{{ registering ? '很高兴认识您' : '欢迎回来' }}</h2>
-        <p class="auth-subtitle">{{ registering ? '创建颐养通账号，开启温暖的陪伴。' : '登录颐养通，让关爱与您常伴。' }}</p>
+        <div class="auth-card-top"><span class="auth-card-symbol"><AppIcon :name="registering ? 'smile' : 'home'" :size="25" /></span><span>养老院照护服务，从这里开始</span></div>
+        <h2 :id="registering ? 'register-heading' : 'login-heading'">{{ registering ? '护工账号注册' : '欢迎回来' }}</h2>
+        <p class="auth-subtitle">{{ registering ? '注册护工账号，由管理员分配负责老人后开展照护。' : '登录禾龄通，让关爱与您常伴。' }}</p>
         <div class="auth-tabs" role="group" aria-label="当前账号页面"><span :aria-current="!registering ? 'page' : undefined">账号登录</span><span :aria-current="registering ? 'page' : undefined">注册账号</span></div>
         <form novalidate :aria-busy="busy" @submit.prevent="submit"><fieldset :disabled="busy" class="auth-fieldset">
-          <div v-if="registering" class="auth-field"><label for="auth-name">您的称呼</label><input id="auth-name" v-model="form.name" autocomplete="nickname" maxlength="30" placeholder="请输入您的称呼" :aria-invalid="!!errors.name" :aria-describedby="errors.name ? 'error-name' : undefined"><p v-if="errors.name" id="error-name" class="auth-error">{{ errors.name }}</p></div>
+          <div v-if="registering" class="auth-field"><label for="auth-name">护工姓名</label><input id="auth-name" v-model="form.name" autocomplete="nickname" maxlength="30" placeholder="请输入护工姓名" :aria-invalid="!!errors.name" :aria-describedby="errors.name ? 'error-name' : undefined"><p v-if="errors.name" id="error-name" class="auth-error">{{ errors.name }}</p></div>
           <div class="auth-field"><label for="auth-phone">手机号码</label><input id="auth-phone" v-model="form.phone" type="tel" inputmode="tel" autocomplete="username" maxlength="11" placeholder="请输入手机号码" :aria-invalid="!!errors.phone" :aria-describedby="errors.phone ? 'error-phone' : undefined"><p v-if="errors.phone" id="error-phone" class="auth-error">{{ errors.phone }}</p></div>
           <div class="auth-field"><label for="auth-password">{{ registering ? '设置密码' : '登录密码' }}</label><div class="auth-password"><input id="auth-password" v-model="form.password" :type="visible ? 'text' : 'password'" :autocomplete="registering ? 'new-password' : 'current-password'" :placeholder="registering ? '至少 8 位，包含字母和数字' : '请输入密码'" :aria-invalid="!!errors.password" :aria-describedby="errors.password ? 'error-password' : undefined"><button type="button" :aria-pressed="visible" aria-controls="auth-password" :aria-label="visible ? '隐藏密码' : '显示密码'" :title="visible ? '隐藏密码' : '显示密码'" @click="visible = !visible"><AppIcon :name="visible ? 'eye-off' : 'eye'" :size="20" /></button></div><p v-if="errors.password" id="error-password" class="auth-error">{{ errors.password }}</p></div>
           <div v-if="registering" class="auth-field"><label for="auth-confirm">确认密码</label><div class="auth-password"><input id="auth-confirm" v-model="form.confirm" :type="confirmVisible ? 'text' : 'password'" autocomplete="new-password" placeholder="请再次输入密码" :aria-invalid="!!errors.confirm" :aria-describedby="errors.confirm ? 'error-confirm' : undefined"><button type="button" :aria-pressed="confirmVisible" aria-controls="auth-confirm" :aria-label="confirmVisible ? '隐藏确认密码' : '显示确认密码'" :title="confirmVisible ? '隐藏确认密码' : '显示确认密码'" @click="confirmVisible = !confirmVisible"><AppIcon :name="confirmVisible ? 'eye-off' : 'eye'" :size="20" /></button></div><p v-if="errors.confirm" id="error-confirm" class="auth-error">{{ errors.confirm }}</p></div>
-          <button class="auth-submit" type="submit">{{ busy ? '正在提交…' : registering ? '创建账号' : '登录' }}<AppIcon name="arrow" :size="19" /></button>
+          <button class="auth-submit" type="submit">{{ busy ? '正在提交…' : registering ? '注册护工账号' : '登录' }}<AppIcon name="arrow" :size="19" /></button>
           <p v-if="notice" class="auth-notice" role="status">{{ notice }}</p>
         </fieldset></form>
         <p class="auth-switch">{{ registering ? '已经有账号？' : '还没有账号？' }}<RouterLink :to="registering ? '/login' : '/register'">{{ registering ? '立即登录' : '立即注册' }}</RouterLink></p>
         <div class="auth-preview"><AppIcon name="info" :size="16" /><span>请妥善保管账号，切勿向他人透露密码。</span></div>
       </section>
     </main>
-    <footer class="auth-footer"><span>颐养通 · 智能养老服务平台</span><span>用心守护，让每一天都安心</span></footer>
+    <footer class="auth-footer"><span>禾龄通 · 智能养老服务平台</span><span>用心守护，让每一天都安心</span></footer>
   </div>
 </template>
 <style scoped>

@@ -21,3 +21,6 @@ from app.models.resident import Resident, ResidentAssignment, ResidentChange
 from app.models.resident import ResidentAccountBinding
 
 from app.models.meals import WeeklyMenu, MealProfile, MealSelection, MealChange
+
+from app.operations.models import Credential, ClinicalProfile, ConstraintToken, Draft, Execution, Correction, Event, Shift
+from app.operations.models import DrugReference

@@ -31,7 +31,7 @@ def snapshot(db,row):
 def validate_assignees(db, ids):
     if ids:
         found=set(db.scalars(select(Account.id).where(Account.id.in_(ids),Account.role=='user').with_for_update()))
-        if found != set(ids): raise HTTPException(422,'负责人员必须是现有普通工作人员账号，请刷新人员列表')
+        if found != set(ids): raise HTTPException(422,'负责人员必须是现有护工账号，请刷新人员列表')
 
 def assign(db,key,ids):
     db.execute(delete(ResidentAssignment).where(ResidentAssignment.resident_id==key))
@@ -59,14 +59,29 @@ def create(db,data,account):
 
 def edit(db,key,data,account):
     row=require(db,key,account)
+    if account.role != 'admin' and set(data.assigned_account_ids) != set(detail(db,row)['assigned_account_ids']):
+        raise HTTPException(403,'护工不能调整负责人员，请联系管理员')
     validate_assignees(db,data.assigned_account_ids)
     before=snapshot(db,row)
     values=data.model_dump(exclude={'assigned_account_ids','version','change_reason'})
-    result=db.execute(update(Resident).where(Resident.id==key,Resident.version==data.version).values(**values,version=data.version+1).execution_options(synchronize_session=False))
+    result=db.execute(update(Resident).where(Resident.id==key,scope(account),Resident.version==data.version).values(**values,version=data.version+1).execution_options(synchronize_session=False))
     if result.rowcount != 1:
         db.rollback();raise HTTPException(409,'档案已被其他人更新，请重新加载后核对修改')
-    assign(db,key,data.assigned_account_ids)
+    if account.role == 'admin': assign(db,key,data.assigned_account_ids)
     db.refresh(row)
     db.add(ResidentChange(id=str(uuid4()),resident_id=key,actor_id=account.id,actor_name=account.name,reason=data.change_reason,before=before,after=snapshot(db,row)))
+    db.commit();db.refresh(row)
+    return detail(db,row)
+
+def edit_care(db,key,data,account):
+    row=require(db,key,account)
+    before=snapshot(db,row)
+    values=data.model_dump(exclude={'version','change_reason'})
+    result=db.execute(update(Resident).where(Resident.id==key,scope(account),Resident.version==data.version).values(**values,version=data.version+1).execution_options(synchronize_session=False))
+    if result.rowcount!=1:
+        db.rollback()
+        raise HTTPException(409,'档案或负责范围已变化，请重新加载后核对')
+    db.refresh(row)
+    db.add(ResidentChange(id=str(uuid4()),resident_id=key,actor_id=account.id,actor_name=account.name,reason='照护资料更新：'+data.change_reason,before=before,after=snapshot(db,row)))
     db.commit();db.refresh(row)
     return detail(db,row)

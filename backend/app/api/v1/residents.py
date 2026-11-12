@@ -54,7 +54,7 @@ def detail(key:UUID,db:DatabaseSession,account:Staff):
     return residents.detail(db,residents.require(db,str(key),account))
 
 @router.put('/{key}')
-def edit(key:UUID,data:ResidentUpdate,db:DatabaseSession,account:Admin):
+def edit(key:UUID,data:ResidentUpdate,db:DatabaseSession,account:Staff):
     return residents.edit(db,str(key),data,account)
 
 @router.get('/{key}/changes')
@@ -62,3 +62,32 @@ def changes(key:UUID,db:DatabaseSession,account:Admin,page:int=Query(1,ge=1),pag
     residents.require(db,str(key),account)
     rows=db.scalars(select(ResidentChange).where(ResidentChange.resident_id==str(key)).order_by(ResidentChange.created_at.desc(),ResidentChange.id).offset((page-1)*page_size).limit(page_size)).all()
     return {'items':rows,'page':page,'page_size':page_size}
+
+class CareInput(BaseModel):
+    model_config=ConfigDict(str_strip_whitespace=True,extra='forbid')
+    version:int=Field(ge=1)
+    change_reason:str=Field(min_length=1,max_length=300)
+    allergies:str=Field(max_length=2000)
+    chronic_conditions:str=Field(max_length=2000)
+    dietary_notes:str=Field(max_length=2000)
+    mobility_notes:str=Field(max_length=2000)
+    communication_notes:str=Field(max_length=2000)
+    care_notes:str=Field(max_length=4000)
+
+@router.put('/{key}/care')
+def update_care(key:UUID,data:CareInput,db:DatabaseSession,account:Staff):
+    return residents.edit_care(db,str(key),data,account)
+
+class AssignmentInput(BaseModel):
+    model_config=ConfigDict(str_strip_whitespace=True,extra='forbid')
+    version:int=Field(ge=1)
+    account_ids:list[UUID]=Field(max_length=100)
+    reason:str=Field(min_length=1,max_length=300)
+
+@router.put('/{key}/assignments')
+def update_assignments(key:UUID,data:AssignmentInput,db:DatabaseSession,account:Admin):
+    row=residents.require(db,str(key),account)
+    values=residents.detail(db,row)
+    values.update(assigned_account_ids=[str(value) for value in data.account_ids],version=data.version,change_reason=data.reason)
+    allowed=set(ResidentUpdate.model_fields)
+    return residents.edit(db,str(key),ResidentUpdate(**{k:v for k,v in values.items() if k in allowed}),account)

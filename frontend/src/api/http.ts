@@ -1,7 +1,7 @@
 const base = (import.meta.env.VITE_API_BASE || '/api').replace(/\/$/, '')
 
 export class ApiError extends Error {
-  constructor(message: string, public status: number) { super(message) }
+  constructor(message: string, public status: number, public detail?: unknown) { super(message) }
 }
 
 export async function request<T>(path: string, options: RequestInit = {}, timeoutMs = 60_000): Promise<T> {
@@ -21,14 +21,16 @@ export async function request<T>(path: string, options: RequestInit = {}, timeou
         sessionStorage.removeItem('yitong-session')
         window.location.hash = '/login'
       }
+      let detail: unknown
       let message = `请求失败（${response.status}）`
       try {
         const data = await response.json()
+        detail = data.detail
         if (typeof data.detail === 'string') message = data.detail
         else if (data.detail && typeof data.detail.message === 'string') message = data.detail.message
         else if (Array.isArray(data.detail)) message = data.detail[0]?.msg || message
       } catch { /* 代理或服务异常可能返回非 JSON */ }
-      throw new ApiError(message, response.status)
+      throw new ApiError(message, response.status, detail)
     }
     if (response.status === 204) return undefined as T
     return await response.json() as T

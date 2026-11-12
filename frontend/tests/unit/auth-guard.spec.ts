@@ -4,12 +4,12 @@ import { authApi, sessionToken, clearSession } from '../../src/api/auth'
 vi.mock('../../src/api/auth', () => ({authApi:{me:vi.fn()}, sessionToken:vi.fn(), clearSession:vi.fn()}))
 beforeEach(() => vi.resetAllMocks())
 describe('登录路由保护', () => {
-  it('老人只能进入自己的档案页面，不能打开院内档案目录或管理页',async()=>{
+  it('旧老人账号不能进入已撤下的老人端或其他功能页面',async()=>{
     vi.mocked(sessionToken).mockReturnValue('resident-token')
     vi.mocked(authApi.me).mockResolvedValue({id:'elder',name:'老人',role:'resident'})
-    expect(await authGuard({meta:{residentOnly:true}})).toBe(true)
-    expect(await authGuard({meta:{staffOnly:true}})).toEqual({name:'my-profile'})
-    expect(await authGuard({meta:{adminOnly:true}})).toEqual({name:'my-profile'})
+    expect(await authGuard({meta:{residentOnly:true}})).toEqual({name:'login'})
+    expect(await authGuard({meta:{staffOnly:true}})).toEqual({name:'login'})
+    expect(await authGuard({meta:{adminOnly:true}})).toEqual({name:'login'})
   })
   it('工作人员不能进入老人本人档案页面',async()=>{
     vi.mocked(sessionToken).mockReturnValue('worker-token')
@@ -41,4 +41,10 @@ describe('登录路由保护', () => {
     expect(await authGuard({meta:{}})).toEqual({name:'login'})
     expect(clearSession).toHaveBeenCalled()
   })
+})
+it('专业岗位进入协作工作台，不能绕到旧管理页面',async()=>{
+ vi.mocked(sessionToken).mockReturnValue('token')
+ vi.mocked(authApi.me).mockResolvedValue({id:'medical',name:'医务室',role:'medical'})
+ expect(await authGuard({path:'/home',meta:{}} as Parameters<typeof authGuard>[0])).toEqual({name:'operations'})
+ expect(await authGuard({path:'/operations',meta:{}} as Parameters<typeof authGuard>[0])).toBe(true)
 })

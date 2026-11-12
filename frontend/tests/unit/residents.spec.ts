@@ -30,3 +30,11 @@ it('账号绑定携带版本与身份核对说明，并支持显式解绑',async
  await bindingApi.set('elder',null,4,'本人申请解绑')
  expect(JSON.parse(String(vi.mocked(request).mock.calls[1][1]?.body)).account_id).toBeNull()
 })
+it('护工只提交照护字段，不能夹带身份、入住或人员分配',async()=>{
+ const form={...emptyResident(),name:'不可改名',status:'discharged',assigned_account_ids:['other'],care_notes:'移位需协助'}
+ await residentsApi.updateCare('elder',form,3,'照护巡查')
+ const [url,options]=vi.mocked(request).mock.calls[0]
+ expect(url).toBe('/residents/elder/care')
+ const data=JSON.parse(String(options?.body))
+ expect(data).toEqual({version:3,change_reason:'照护巡查',allergies:'',chronic_conditions:'',dietary_notes:'',mobility_notes:'',communication_notes:'',care_notes:'移位需协助'})
+})

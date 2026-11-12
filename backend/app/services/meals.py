@@ -79,10 +79,21 @@ def publish(db,key,data,actor):
     if report['pending'] and not data.acknowledge_pending:raise HTTPException(422,{'message':'仍有待核实老人；明确确认后可发布，但这些老人不能自助确认选餐','coverage':report})
     row.status='published';row.version+=1;audit(db,actor,'menu_publish',key,report);db.commit();return menu_dict(row)
 def deadline(row,slot):return datetime.combine(row.week_start+timedelta(days=slot['day']),time.fromisoformat(slot['cutoff']),TZ)
-def choices(db,actor,week):
-    resident=own_resident(db,actor);profile=db.get(MealProfile,resident.id)
+def meal_resident(db,actor,key=None,lock=False):
+    if key is None:return own_resident(db,actor,lock)
+    from app.services.residents import scope
+    statement=select(Resident).where(Resident.id==key,scope(actor))
+    if lock:statement=statement.with_for_update()
+    row=db.scalar(statement.execution_options(populate_existing=True))
+    if row is None:raise HTTPException(404,'档案不存在或无权访问')
+    return row
+
+def choices(db,actor,week,resident_id=None):
+    resident=meal_resident(db,actor,resident_id);profile=db.get(MealProfile,resident.id)
+    from app.operations.models import ClinicalProfile
+    professional=db.get(ClinicalProfile,resident.id) is not None
     row=db.scalar(select(WeeklyMenu).where(WeeklyMenu.week_start==week,WeeklyMenu.status=='published'))
-    if not row:return {'menu':None,'resident_name':resident.name,'reviewed':reviewed(resident,profile),'slots':[]}
+    if not row:return {'menu':None,'resident_name':resident.name,'reviewed':reviewed(resident,profile),'slots':[],'professional_workflow':professional}
     selected={(s.meal_date,s.meal):s for s in db.scalars(select(MealSelection).where(MealSelection.resident_id==resident.id,MealSelection.menu_id==row.id))}
     counts=dict(db.execute(select(MealSelection.option_id,func.count()).join(Resident,Resident.id==MealSelection.resident_id).where(MealSelection.menu_id==row.id,Resident.status=='in_care').group_by(MealSelection.option_id)).all())
     slots=[]
@@ -91,14 +102,17 @@ def choices(db,actor,week):
         options=[]
         for o in slot['options']:
             why=reasons(o,profile) if reviewed(resident,profile) else ['饮食要求尚未核实，请联系工作人员']
+            if professional:why=why+['已启用专业协作校验，请通过岗位协作提交餐食调整']
             used=counts.get(o['id'],0)
             options.append({**o,'reasons':why,'remaining':max(0,o['capacity']-used)})
         slots.append({**slot,'date':meal_date,'closed':now()>=deadline(row,slot),'options':options,'selection':{'option_id':pick.option_id,'version':pick.version,'needs_review':pick.profile_version!=(profile.version if profile else 0) or pick.resident_version!=resident.version} if pick else None})
-    return {'menu':{'id':row.id,'week_start':row.week_start,'version':row.version},'resident_name':resident.name,'reviewed':reviewed(resident,profile),'in_care':resident.status=='in_care','slots':slots}
-def select_meal(db,data,actor):
+    return {'menu':{'id':row.id,'week_start':row.week_start,'version':row.version},'resident_name':resident.name,'reviewed':reviewed(resident,profile),'in_care':resident.status=='in_care','slots':slots,'professional_workflow':professional}
+def select_meal(db,data,actor,resident_id=None):
     row=get_menu(db,str(data.menu_id),True)
     if row.status!='published':raise HTTPException(409,'菜单尚未发布')
-    resident=own_resident(db,actor,True)
+    resident=meal_resident(db,actor,resident_id,True)
+    from app.operations.models import ClinicalProfile
+    if db.get(ClinicalProfile,resident.id):raise HTTPException(409,'该老人已启用专业协作校验，请通过岗位协作提交餐食调整，不能跳过食药冲突校验')
     profile=db.scalar(select(MealProfile).where(MealProfile.resident_id==resident.id).with_for_update())
     if resident.status!='in_care':raise HTTPException(409,'已离院档案不能确认在院餐食')
     if not reviewed(resident,profile):raise HTTPException(409,'饮食资料尚未核实或档案已变化，请联系工作人员')

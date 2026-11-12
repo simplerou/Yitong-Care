@@ -13,6 +13,7 @@ export const residentsApi = {
   detail:(id:string)=>request<Resident>(`/residents/${encodeURIComponent(id)}`),
   create:(data:ResidentInput)=>request<Resident>('/residents',{method:'POST',body:JSON.stringify(data)}),
   update:(id:string,data:ResidentInput,version:number,change_reason:string)=>request<Resident>(`/residents/${encodeURIComponent(id)}`,{method:'PUT',body:JSON.stringify({...data,version,change_reason})}),
+  updateCare:(id:string,data:ResidentInput,version:number,change_reason:string)=>request<Resident>(`/residents/${encodeURIComponent(id)}/care`,{method:'PUT',body:JSON.stringify({version,change_reason,...Object.fromEntries(['allergies','chronic_conditions','dietary_notes','mobility_notes','communication_notes','care_notes'].map(key=>[key,data[key as keyof ResidentInput]]))})}),
   assignees:()=>request<{id:string;name:string;phone_hint:string}[]>('/residents/assignees'),
   changes:(id:string,page=1)=>request<{items:ResidentChange[];page:number;page_size:number}>(`/residents/${encodeURIComponent(id)}/changes?page=${page}`),
 }

@@ -6,7 +6,7 @@ from app.services.speech.asr import ASRClient,get_asr,MAX_BYTES
 
 router=APIRouter(prefix='/speech',tags=['speech'])
 def resident(account=Depends(require_account)):
-    if account.role!='resident':raise HTTPException(403,'语音提问目前仅供老人账号使用')
+    if account.role!='user':raise HTTPException(403,'语音提问目前仅供护工账号使用')
     return account
 
 @router.get('/config',dependencies=[Depends(resident)])

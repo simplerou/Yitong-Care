@@ -1,0 +1,70 @@
+# Isolated local stack. Existing host MySQL data is never imported/overwritten.
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-yitong_care}
+      MYSQL_USER: ${COMPOSE_MYSQL_USER:-heling}
+      MYSQL_PASSWORD: ${COMPOSE_MYSQL_PASSWORD:?Configure a separate container DB password}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set a separate MYSQL_ROOT_PASSWORD}
+    volumes: [mysql_data:/var/lib/mysql]
+    healthcheck:
+      test: [CMD-SHELL, 'mysqladmin ping -h localhost --silent']
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  neo4j:
+    image: neo4j:5-community
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:?Configure NEO4J_PASSWORD}
+    volumes: [neo4j_data:/data]
+    ports: ['127.0.0.1:7474:7474', '127.0.0.1:7687:7687']
+  validation:
+    build: ./backend
+    env_file: backend/.env
+    environment:
+      NEO4J_HTTP_URL: http://neo4j:7474
+      NEO4J_DATABASE: neo4j
+      NEO4J_USER: neo4j
+      VALIDATION_GRAPH_MODE: neo4j
+      VALIDATION_SERVICE_TOKEN: ${VALIDATION_SERVICE_TOKEN:?Configure an independent service token}
+    command: [uvicorn, validation_service.main:app, --host, 0.0.0.0, --port, '8100']
+    depends_on: [neo4j]
+  migrate:
+    build: ./backend
+    env_file: backend/.env
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${COMPOSE_MYSQL_USER:-heling}
+      MYSQL_PASSWORD: ${COMPOSE_MYSQL_PASSWORD:?Configure a separate container DB password}
+      MYSQL_UNIX_SOCKET: ''
+    command: [alembic, upgrade, head]
+    depends_on:
+      mysql: {condition: service_healthy}
+  api:
+    build: ./backend
+    env_file: backend/.env
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${COMPOSE_MYSQL_USER:-heling}
+      MYSQL_PASSWORD: ${COMPOSE_MYSQL_PASSWORD:?Configure a separate container DB password}
+      MYSQL_UNIX_SOCKET: ''
+      VALIDATION_SERVICE_URL: http://validation:8100
+      NEO4J_HTTP_URL: http://neo4j:7474
+      NEO4J_DATABASE: neo4j
+      NEO4J_USER: neo4j
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      validation: {condition: service_started}
+    volumes: [app_data:/app/var]
+    ports: ['127.0.0.1:8000:8000']
+  web:
+    build: ./frontend
+    ports: ['127.0.0.1:8080:80']
+    depends_on: [api]
+volumes:
+  mysql_data:
+  neo4j_data:
+  app_data:

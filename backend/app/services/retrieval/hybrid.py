@@ -21,13 +21,14 @@ def eligible(model: str):
 
 
 
-def search(db: Session, request: SearchRequest, embedder: Embedder, manager: IndexManager, allowed_kb_ids: list[str] | None = None) -> SearchResult:
+def search(db: Session, request: SearchRequest, embedder: Embedder, manager: IndexManager, allowed_kb_ids: list[str] | None = None, allowed_chunk_ids: set[int] | None = None) -> SearchResult:
     started = perf_counter()
     if request.scope != 'all' and db.get(KnowledgeDocument, request.scope) is None:
         raise BusinessError('所选文档已不存在，请重新选择知识范围。', 404)
     conditions = [*eligible(embedder.key), DocumentChunk.embedding_dim == embedder.dimensions]
     if request.scope != 'all': conditions.append(DocumentChunk.doc_id == request.scope)
     if allowed_kb_ids is not None: conditions.append(DocumentChunk.kb_id.in_(allowed_kb_ids))
+    if allowed_chunk_ids is not None: conditions.append(DocumentChunk.id.in_(allowed_chunk_ids))
     pool = db.execute(select(DocumentChunk.id, DocumentChunk.kb_id, DocumentChunk.content).join(KnowledgeDocument, KnowledgeDocument.id == DocumentChunk.doc_id).where(*conditions)).all()
     groups = defaultdict(set)
     for chunk_id, kb_id, _ in pool: groups[kb_id].add(chunk_id)

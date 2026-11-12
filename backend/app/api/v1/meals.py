@@ -3,7 +3,7 @@ from typing import Annotated
 from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
-from app.core.auth import require_account, require_admin
+from app.core.auth import require_account, require_admin, require_staff
 from app.core.deps import DatabaseSession
 from app.models.auth import Account
 from app.models.meals import WeeklyMenu
@@ -66,3 +66,15 @@ def read_profile(key:UUID,db:DatabaseSession,actor:Admin,llm:Annotated[QwenClien
 from app.services.howtocook import configuration
 @router.get('/recipe-source')
 def recipe_source(actor:Admin):return configuration()
+
+Staff=Annotated[Account,Depends(require_staff)]
+
+@router.get('/residents/{key}')
+def resident_choices(key:UUID,week_start:date,db:DatabaseSession,actor:Staff):
+    return meals.choices(db,actor,week_start,str(key))
+
+@router.put('/residents/{key}')
+def resident_selection(key:UUID,data:SelectionInput,db:DatabaseSession,actor:Staff):
+    from app.services.residents import require
+    require(db,str(key),actor)
+    return meals.select_meal(db,data,actor,str(key))

@@ -4,9 +4,11 @@ export async function authGuard(to: {meta: {layout?: unknown; adminOnly?: unknow
   if (!sessionToken()) return { name: 'login' }
   try {
     const account = await authApi.me()
-    if(to.meta.adminOnly && account.role !== 'admin')return {name:account.role==='resident'?'my-profile':'home'}
-    if(to.meta.staffOnly && account.role === 'resident')return {name:'my-profile'}
-    if(to.meta.residentOnly && account.role !== 'resident')return {name:'home'}
+    if(account.role === 'resident'){ clearSession(); return {name:'login'} }
+    if(['medical','kitchen','nursing','finance'].includes(account.role || '') && (to as {path?:string}).path && !(to as {path?:string}).path?.startsWith('/operations'))return {name:'operations'}
+    if(to.meta.adminOnly && account.role !== 'admin')return {name:'home'}
+    if(to.meta.staffOnly && !['admin','user'].includes(account.role || ''))return {name:'login'}
+    if(to.meta.residentOnly)return {name:'home'}
     return true
   }
   catch { clearSession(); return { name: 'login' } }

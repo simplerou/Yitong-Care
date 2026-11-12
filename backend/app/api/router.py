@@ -37,3 +37,6 @@ api_router.include_router(meals_router)
 
 from app.api.v1.speech import router as speech_router
 api_router.include_router(speech_router)
+
+from app.api.v1.operations import router as operations_router
+api_router.include_router(operations_router)

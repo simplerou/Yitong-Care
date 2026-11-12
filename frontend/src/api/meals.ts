@@ -8,7 +8,7 @@ export interface Profile {version:number;resident_version:number;allergy_status:
 export interface Requirement {id:string;name:string;record_no:string;location:string;resident_version:number;allergies:string;chronic_conditions:string;dietary_notes:string;profile:Profile|null;reviewed:boolean}
 export interface Coverage {in_care:number;reviewed_count:number;pending:{id:string;name:string}[];missing:{resident_id:string;name:string;day:number;meal:Meal}[]}
 export interface MySlot extends MenuSlot {date:string;closed:boolean;options:(MealOption & {reasons:string[];remaining:number})[];selection:{option_id:string;version:number;needs_review:boolean}|null}
-export interface MyMeals {menu:{id:string;week_start:string;version:number}|null;resident_name:string;reviewed:boolean;in_care?:boolean;slots:MySlot[]}
+export interface MyMeals {professional_workflow?:boolean;menu:{id:string;week_start:string;version:number}|null;resident_name:string;reviewed:boolean;in_care?:boolean;slots:MySlot[]}
 export interface Kitchen {date:string;meal:Meal;in_care:number;options:{id:string;name:string;foods:string[];count:number;capacity:number}[];needs_review:{id:string;name:string;location:string}[];unselected:{id:string;name:string;location:string}[]}
 export const mealNames:Record<Meal,string>={breakfast:'早餐',lunch:'午餐',dinner:'晚餐'}
 export const textures:Record<Texture,string>={normal:'普通质地',soft:'软食',minced:'细碎食',pureed:'泥糊状食物'}
@@ -54,6 +54,8 @@ export const mealsApi={
  save:(menu:WeeklyMenu)=>request<WeeklyMenu>('/meals/menus',{method:'PUT',body:JSON.stringify({week_start:menu.week_start,slots:menu.slots,version:menu.version})}),
  coverage:(id:string)=>request<Coverage>(`/meals/menus/${id}/coverage`),
  publish:(id:string,version:number,acknowledge_pending:boolean)=>request<WeeklyMenu>(`/meals/menus/${id}/publish`,{method:'POST',body:JSON.stringify({version,acknowledge_pending})}),
+ resident:(id:string,week:string)=>request<MyMeals>(`/meals/residents/${encodeURIComponent(id)}?week_start=${week}`),
+ selectFor:(id:string,menu_id:string,slot:MySlot,option_id:string)=>request(`/meals/residents/${encodeURIComponent(id)}`,{method:'PUT',body:JSON.stringify({menu_id,day:slot.day,meal:slot.meal,option_id,version:slot.selection?.version||0})}),
  mine:(week:string)=>request<MyMeals>(`/meals/mine?week_start=${week}`),
  choose:(menu_id:string,slot:MySlot,option_id:string)=>request('/meals/mine',{method:'PUT',body:JSON.stringify({menu_id,day:slot.day,meal:slot.meal,option_id,version:slot.selection?.version||0})}),
  kitchen:(id:string,date:string,meal:Meal)=>request<Kitchen>(`/meals/menus/${id}/kitchen?meal_date=${date}&meal=${meal}`),

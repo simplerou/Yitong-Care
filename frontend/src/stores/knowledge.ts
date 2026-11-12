@@ -134,8 +134,8 @@ export const useKnowledgeStore = defineStore('knowledge', () => {
   }
 
   function loadDemo(kbId = 'general', source = '功能验证示例') {
-    const text = '这是颐养通知识库功能验证文档，不作为医疗建议或政策办理依据。\n社区居民可以向服务窗口咨询活动安排、助餐服务和便民事项。\n工作人员可上传授权文档，核对正文，保存切块，然后进入后续的向量入库流程。\n文档保存后，刷新页面仍可查看；文本块应保留准确的原文位置。'
-    return upload(new File([text], '颐养通功能验证示例.txt', { type: 'text/plain' }), kbId, source)
+    const text = '这是禾龄通知识库功能验证文档，不作为医疗建议或政策办理依据。\n社区居民可以向服务窗口咨询活动安排、助餐服务和便民事项。\n工作人员可上传授权文档，核对正文，保存切块，然后进入后续的向量入库流程。\n文档保存后，刷新页面仍可查看；文本块应保留准确的原文位置。'
+    return upload(new File([text], '禾龄通功能验证示例.txt', { type: 'text/plain' }), kbId, source)
   }
 
   return { documents, bases, stats, total, page, pageSize, query, loading, uploading, error, busyId, detailBusy,

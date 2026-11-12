@@ -23,7 +23,7 @@ def settings(**kwargs):return Settings(_env_file=None,asr_api_key='SECRET_TEST_K
 def speech(client):
     api,_,factory=client
     with factory() as db:
-        db.scalar(select(Account).where(Account.phone=='13800000000')).role='resident';db.commit()
+        db.scalar(select(Account).where(Account.phone=='13800000000')).role='user';db.commit()
     calls=[]
     def handler(request):
         calls.append(request)
@@ -57,7 +57,7 @@ def test_rejects_invalid_audio_before_provider_call(speech):
     assert not calls
 
 
-def test_only_resident_accounts_can_use_speech(client):
+def test_only_caregiver_accounts_can_use_speech(client):
     api,_,_=client
     assert api.get('/api/speech/config').status_code==403
     assert api.post('/api/speech/transcribe',content=wav(),headers={'Content-Type':'audio/wav'}).status_code==403
