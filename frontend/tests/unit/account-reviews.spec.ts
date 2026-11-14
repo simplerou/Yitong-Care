@@ -13,3 +13,7 @@ it('重新申请仅携带申请信息，不开放账号角色或状态字段',as
  const body=JSON.parse(String(vi.mocked(request).mock.calls[0][1]?.body))
  expect(body).not.toHaveProperty('status');expect(body).not.toHaveProperty('role')
 })
+it('审核记录按结果和页码查询，不提交账号身份',async()=>{
+ await reviews.history('reject',2)
+ expect(request).toHaveBeenCalledWith('/account-reviews/history?result=reject&page=2')
+})

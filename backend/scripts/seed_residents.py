@@ -1,23 +1,29 @@
-"""100 fictional resident samples; atomic import, stable IDs and no real phone numbers."""
+"""20 fictional resident samples; atomic import, stable IDs and no real phone numbers."""
 import argparse
 from datetime import date, timedelta
 import json
 from pathlib import Path
 from uuid import UUID, uuid5, uuid4
-from sqlalchemy import select
+from sqlalchemy import select,delete
 from sqlalchemy.exc import SQLAlchemyError
 from app.db.session import SessionLocal
 from app.models.auth import Account
-from app.models.resident import Resident, ResidentChange
+from app.models.resident import Resident, ResidentChange, ResidentAssignment
+from app.db.base import Base
+from fastapi.encoders import jsonable_encoder
+from app.operations.models import Draft
 from app.schemas.resident import ResidentInput
 from app.services.residents import snapshot
 
 SEED='yitong-demo-residents-20261102-v1'
 NAMESPACE=UUID('24f0a752-e783-41b5-825e-1d635d0d805f')
-SOURCE='虚构测试资料｜100人演示批次20261102-v1｜非真实入住或医疗记录'
-DATA=Path(__file__).resolve().parents[1]/'fixtures/residents_demo_100.json'
+COUNT=20
+LEGACY_SOURCE='虚构测试资料｜100人演示批次20261102-v1｜非真实入住或医疗记录'
+SOURCE='虚构测试资料｜20人演示批次20261102-v1｜非真实入住或医疗记录'
+DATA=Path(__file__).resolve().parents[1]/'fixtures/residents_demo_20.json'
 
-def generate():
+def generate(count=COUNT):
+    if count not in (20,100):raise ValueError('仅支持20人当前样例或100人历史样例')
     surnames=list('赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦许何')
     male_names=['建国','德明','志远','文博','文清']
     female_names=['秀英','淑珍','秀兰','玉华','文静']
@@ -30,25 +36,25 @@ def generate():
         ('未评估','','','',''),
     ]
     rows=[]
-    for i in range(1,101):
+    for i in range(1,count+1):
         level,chronic,allergy,diet,mobility=profiles[(i-1)%6]
         rows.append({'sample_no':i,'record_no':f'DEMO202611-{i:03d}','data':{
             'name':f'{surnames[(i-1)%20]}{(male_names if i%2 else female_names)[(i-1)//20]}','gender':'male' if i%2 else 'female',
             'birth_date':date(2026-60-(i-1)%40,(i-1)%10+1,(i-1)%28+1).isoformat(),
             'admission_date':(date(2026,10,25)-timedelta(days=i*13%650)).isoformat(),
-            'status':'in_care' if i<=90 else 'discharged',
-            'location':f'{"ABCD"[(i-1)//25]}楼 / {(i-1)//30+1}层 / {(i-1)//30+1}{(i-1)%30//2+1:02d}室 / {(i-1)%2+1:02d}床' if i<=90 else '',
+            'status':'in_care' if i<=min(count,90) else 'discharged',
+            'location':f'{"ABCD"[(i-1)//(count//4)]}楼 / {(i-1)//30+1}层 / {(i-1)//30+1}{(i-1)%30//2+1:02d}室 / {(i-1)%2+1:02d}床' if i<=min(count,90) else '',
             'care_level':level,'contact_name':f'演示家属{i:03d}（虚构）',
             'contact_relation':['女儿','儿子','配偶','其他亲属'][(i-1)%4],'contact_phone':'',
             'allergies':allergy,'chronic_conditions':chronic,'dietary_notes':diet,'mobility_notes':mobility,
             'communication_notes':['普通话沟通，偏好放慢语速。','听力待核实，沟通时确认理解。','偏好安静环境，情绪观察待记录。',''][(i-1)%4],
-            'care_notes':f'【纯虚构测试档案 {i:03d}/100】用于列表、筛选、分页、权限与变更记录测试；不得作为实际照护、诊断或医嘱依据。',
-            'source':SOURCE,'assigned_account_ids':[]}})
+            'care_notes':f'【纯虚构测试档案 {i:03d}/{count}】用于列表、筛选、分页、权限与变更记录测试；不得作为实际照护、诊断或医嘱依据。',
+            'source':SOURCE if count==20 else LEGACY_SOURCE,'assigned_account_ids':[]}})
     return {'seed':SEED,'as_of':'2026-11-02','description':'全部为虚构测试资料，不包含真实联系电话。','residents':rows}
 
 def read_dataset():
     body=json.loads(DATA.read_text(encoding='utf-8'))
-    if body.get('seed')!=SEED or len(body.get('residents',[]))!=100:raise ValueError('数据集标识或数量错误')
+    if body.get('seed')!=SEED or len(body.get('residents',[]))!=COUNT:raise ValueError('数据集标识或数量错误')
     rows=[]
     for i,item in enumerate(body['residents'],1):
         if item['sample_no']!=i or item['record_no']!=f'DEMO202611-{i:03d}':raise ValueError('序号错误')
@@ -57,8 +63,53 @@ def read_dataset():
         rows.append((item['record_no'],data))
     return rows
 
-def import_dataset(db,rows,admin_phone=None,refresh_labels=False):
-    admins=list(db.scalars(select(Account).where(Account.role=='admin').order_by(Account.id)))
+def trim_excess(db,backup_dir):
+    """Remove only the exact legacy sample IDs, never unrelated resident records."""
+    candidates=[]
+    for i in range(COUNT+1,101):
+        number=f'DEMO202611-{i:03d}'
+        key=str(uuid5(NAMESPACE,number))
+        row=db.scalar(select(Resident).where((Resident.id==key)|(Resident.record_no==number)).with_for_update())
+        if not row:continue
+        if row.id!=key or row.record_no!=number or row.source not in (SOURCE,LEGACY_SOURCE):
+            raise ValueError('历史样例身份或来源已变化，未清理任何档案')
+        candidates.append(row)
+    if not candidates:return 0
+    ids={row.id for row in candidates}
+    # Refuse to destroy meal, medical or execution records. Assignments and seed
+    # change history are backed up and removed together with the sample itself.
+    allowed={'resident_assignment','resident_change'}
+    for table in Base.metadata.sorted_tables:
+        if table.name in allowed:continue
+        for fk in table.foreign_keys:
+            if fk.column.table.name=='resident' and db.scalar(select(fk.parent).where(fk.parent.in_(ids)).limit(1)):
+                raise ValueError(f'多余样例已关联业务记录（{table.name}），本次整体回滚；请先核对这些业务记录')
+    def contains(value):
+        if isinstance(value,dict):return any(contains(v) for v in value.values())
+        if isinstance(value,list):return any(contains(v) for v in value)
+        return isinstance(value,str) and value in ids
+    for draft in db.scalars(select(Draft)):
+        if contains(draft.private_context) or contains(draft.current) or contains(draft.proposed):
+            raise ValueError('多余样例已关联协作草稿，本次整体回滚；请先核对关联草稿')
+    changes=list(db.scalars(select(ResidentChange).where(ResidentChange.resident_id.in_(ids))))
+    assignments=list(db.scalars(select(ResidentAssignment).where(ResidentAssignment.resident_id.in_(ids))))
+    backup={'residents':[snapshot(db,row) for row in candidates],
+            'assignments':[{'resident_id':row.resident_id,'account_id':row.account_id} for row in assignments],
+            'changes':[{column.name:getattr(row,column.name) for column in ResidentChange.__table__.columns} for row in changes]}
+    backup_dir=Path(backup_dir);backup_dir.mkdir(parents=True,exist_ok=True)
+    path=backup_dir/f'residents-before-resize-{uuid4().hex}.json'
+    import os
+    with open(path,'x',encoding='utf-8',opener=lambda name,flags:os.open(name,flags,0o600)) as handle:
+        json.dump(jsonable_encoder(backup),handle,ensure_ascii=False,indent=2)
+    db.execute(delete(ResidentAssignment).where(ResidentAssignment.resident_id.in_(ids)))
+    db.execute(delete(ResidentChange).where(ResidentChange.resident_id.in_(ids)))
+    db.execute(delete(Resident).where(Resident.id.in_(ids)))
+    return len(ids)
+
+
+def import_dataset(db,rows,admin_phone=None,refresh_labels=False,resize_to_20=False,backup_dir=None):
+    if resize_to_20 and [number for number,_ in rows]!=[f'DEMO202611-{i:03d}' for i in range(1,COUNT+1)]:raise ValueError('缩减操作仅支持当前20条完整样例')
+    admins=list(db.scalars(select(Account).where(Account.role=='admin',Account.status=='active').order_by(Account.id)))
     if admin_phone:admins=[row for row in admins if row.phone==admin_phone]
     if len(admins)!=1:raise ValueError('未找到唯一管理员；多个管理员时请用 --admin-phone 指定导入操作人')
     actor=admins[0];pending=[];skipped=0;updates=[]
@@ -77,6 +128,7 @@ def import_dataset(db,rows,admin_phone=None,refresh_labels=False):
             else: skipped+=1
         else:pending.append((key,number,data))
     try:
+        removed=trim_excess(db,backup_dir or Path(__file__).resolve().parents[1]/'var/backups') if resize_to_20 else 0
         for row,changes in updates:
             before=snapshot(db,row)
             for field,value in changes.items():setattr(row,field,value)
@@ -85,23 +137,25 @@ def import_dataset(db,rows,admin_phone=None,refresh_labels=False):
         for key,number,data in pending:
             row=Resident(id=key,record_no=number,version=1,**data.model_dump(exclude={'assigned_account_ids'}))
             db.add(row);db.flush()
-            db.add(ResidentChange(id=str(uuid5(NAMESPACE,number+':created')),resident_id=key,actor_id=actor.id,actor_name=actor.name,reason='批量导入虚构测试档案（100人演示批次）',before=None,after=snapshot(db,row)))
+            db.add(ResidentChange(id=str(uuid5(NAMESPACE,number+':created')),resident_id=key,actor_id=actor.id,actor_name=actor.name,reason='批量导入虚构测试档案',before=None,after=snapshot(db,row)))
         db.commit()
     except Exception:
         db.rollback();raise
-    return {'created':len(pending),'skipped':skipped,'updated':len(updates),'batch_total':len(rows)}
+    return {'created':len(pending),'skipped':skipped,'updated':len(updates),'batch_total':len(rows)} | ({'removed':removed} if resize_to_20 else {})
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--admin-phone',help='选择已有管理员作为操作人，不创建或提升账号')
     parser.add_argument('--refresh-labels',action='store_true',help='更新本批次旧姓名前缀及原始演示楼位置，不覆盖人工修改的位置或照护资料')
+    parser.add_argument('--resize-to-20',action='store_true',help='备份并清理旧样例021至100，保留001至020的现有资料和分配；关联业务时整体中止')
     parser.add_argument('--validate-only',action='store_true',help='只校验数据，不连接数据库')
     args=parser.parse_args()
     try:
         rows=read_dataset()
         if args.validate_only:
-            print('校验通过：100份虚构档案，90位在院、10位离院，联系电话全部留空。');return 0
-        with SessionLocal() as db:result=import_dataset(db,rows,args.admin_phone,args.refresh_labels)
+            print('校验通过：20份虚构档案，20位在院，分布于A/B/C/D楼，联系电话全部留空。');return 0
+        with SessionLocal() as db:result=import_dataset(db,rows,args.admin_phone,args.refresh_labels,args.resize_to_20)
+        if args.resize_to_20:print(f"旧样例清理 {result['removed']} 份；备份保存在 backend/var/backups。")
         print(f"导入完成：新增 {result['created']} 份，显示调整 {result['updated']} 份，已存在跳过 {result['skipped']} 份；未自动分配工作人员。")
         return 0
     except ValueError as error:

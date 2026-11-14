@@ -4,35 +4,35 @@ from app.models.resident import Resident, ResidentChange, ResidentAssignment
 from scripts.seed_residents import read_dataset, generate, import_dataset
 
 
-def test_100_sample_import_is_audited_and_idempotent(client):
+def test_20_sample_import_is_audited_and_idempotent(client):
     _,_,factory=client
     rows=read_dataset()
-    assert len(rows)==100
-    assert len({row[1].name for row in rows})==100
-    assert sum(data.status=='in_care' for _,data in rows)==90
-    assert len({data.location for _,data in rows if data.status=='in_care'})==90
+    assert len(rows)==20
+    assert len({row[1].name for row in rows})==20
+    assert sum(data.status=='in_care' for _,data in rows)==20
+    assert len({data.location for _,data in rows if data.status=='in_care'})==20
     assert not any('测试' in data.name for _,data in rows)
     assert {data.location.split('楼')[0] for _,data in rows if data.location}==set('ABCD')
     assert all(not data.contact_phone for _,data in rows)
     assert generate()['residents'][0]['data']['name']==rows[0][1].name
     with factory() as db:
-        assert import_dataset(db,rows)=={'created':100,'skipped':0,'updated':0,'batch_total':100}
-        assert db.scalar(select(func.count()).select_from(ResidentChange))==100
+        assert import_dataset(db,rows)=={'created':20,'skipped':0,'updated':0,'batch_total':20}
+        assert db.scalar(select(func.count()).select_from(ResidentChange))==20
         assert db.scalar(select(func.count()).select_from(ResidentAssignment))==0
         first=db.scalar(select(Resident).where(Resident.record_no=='DEMO202611-001'))
         first.care_notes='管理员人工调整';db.commit()
-        assert import_dataset(db,rows)=={'created':0,'skipped':100,'updated':0,'batch_total':100}
+        assert import_dataset(db,rows)=={'created':0,'skipped':20,'updated':0,'batch_total':20}
         db.refresh(first)
         assert first.care_notes=='管理员人工调整'
-        assert db.scalar(select(func.count()).select_from(Resident))==100
-        assert db.scalar(select(func.count()).select_from(ResidentChange))==100
+        assert db.scalar(select(func.count()).select_from(Resident))==20
+        assert db.scalar(select(func.count()).select_from(ResidentChange))==20
 
 
 def test_failure_rolls_back_whole_batch(client):
     _,_,factory=client
     with factory() as db:
         def fail_partway(session, *_):
-            if any(isinstance(row,Resident) and row.record_no=='DEMO202611-025' for row in session.new):
+            if any(isinstance(row,Resident) and row.record_no=='DEMO202611-005' for row in session.new):
                 raise RuntimeError('模拟导入失败')
         event.listen(db,'before_flush',fail_partway)
         try:
@@ -58,5 +58,49 @@ def test_refresh_old_labels_preserves_manual_details_and_is_idempotent(client):
         assert one.name=='赵建国' and one.location.startswith('A楼')
         assert one.care_notes=='人工照护备注' and one.version==2
         assert two.name=='人工更正姓名' and two.location=='管理员调整的位置'
-        assert db.scalar(select(func.count()).select_from(ResidentChange))==101
+        assert db.scalar(select(func.count()).select_from(ResidentChange))==21
         assert import_dataset(db,rows,refresh_labels=True)['updated']==0
+
+
+def legacy_rows():
+    from app.schemas.resident import ResidentInput
+    return [(item['record_no'],ResidentInput.model_validate(item['data'])) for item in generate(100)['residents']]
+
+
+def test_resize_only_legacy_excess_preserves_retained_assignments_and_real_records(client,tmp_path):
+    import json
+    from app.models.auth import Account
+    api,_,factory=client
+    unrelated=api.post('/api/residents',json={'name':'真实来源登记','source':'人工录入'}).json()
+    with factory() as db:
+        import_dataset(db,legacy_rows())
+        one=db.scalar(select(Resident).where(Resident.record_no=='DEMO202611-001'))
+        extra=db.scalar(select(Resident).where(Resident.record_no=='DEMO202611-021'))
+        actor=db.scalar(select(Account))
+        db.add_all([ResidentAssignment(resident_id=one.id,account_id=actor.id),ResidentAssignment(resident_id=extra.id,account_id=actor.id)])
+        one.care_notes='留下的人工资料';db.commit()
+        result=import_dataset(db,read_dataset(),resize_to_20=True,backup_dir=tmp_path)
+        assert result['removed']==80 and result['created']==0
+        assert db.scalar(select(func.count()).select_from(Resident))==21
+        assert db.get(Resident,unrelated['id'])
+        db.refresh(one)
+        assert one.care_notes=='留下的人工资料'
+        assert db.scalar(select(func.count()).select_from(ResidentAssignment))==1
+        backup=json.loads(next(tmp_path.glob('*.json')).read_text())
+        assert len(backup['residents'])==80 and len(backup['changes'])==80
+        assert len(backup['assignments'])==1
+        assert import_dataset(db,read_dataset(),resize_to_20=True,backup_dir=tmp_path)['removed']==0
+
+
+def test_resize_refuses_business_references_and_rolls_back(client,tmp_path):
+    from app.models.meals import MealProfile
+    _,_,factory=client
+    with factory() as db:
+        import_dataset(db,legacy_rows())
+        extra=db.scalar(select(Resident).where(Resident.record_no=='DEMO202611-021'))
+        db.add(MealProfile(resident_id=extra.id,resident_version=1,version=1,data={}))
+        db.commit()
+        with pytest.raises(ValueError,match='关联业务记录'):
+            import_dataset(db,read_dataset(),resize_to_20=True,backup_dir=tmp_path)
+        assert db.scalar(select(func.count()).select_from(Resident))==100
+        assert not list(tmp_path.glob('*.json'))
