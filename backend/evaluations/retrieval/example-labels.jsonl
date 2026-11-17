@@ -1,0 +1,2 @@
+{"id":"example-calibration","split":"calibration","relevant_chunk_ids":["DEMO-CHUNK-A"],"query":"虚构说明书引用定位示例"}
+{"id":"example-holdout","split":"holdout","relevant_chunk_ids":["DEMO-CHUNK-B","DEMO-CHUNK-C"],"query":"虚构禁忌依据定位示例"}

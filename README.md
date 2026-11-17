@@ -22,6 +22,7 @@
 - **专业草稿与人工审批**：医务室、食堂通过受限工具查证及生成草稿；用药由医生核对签字后进入院长审批。修改方案后重新校验，审批前再次检查版本、来源、资质与规则。
 - **照护与换餐协作**：护工异常上报进入护理部审核及医务室待办；换餐经代码校验、食堂批准和备餐确认后进入护工执行。
 - **排班、打卡与核薪**：护理部提交排班，院长批准，护工打卡；财务依据工时进行代码核薪并生成解释与待审批核薪单。
+- **修正复盘与质量看板**：草稿内查看修改证据、填写复盘结论并闭环；院长按周/月查看规则、Agent、培训三路汇总和原生ReAct有效调用统计。
 - **样例初始化**：提供20条虚构老人档案，以及5名护工各负责4位样例老人的初始化脚本；保留既有数据时检查冲突，操作留痕。
 
 ## 实现结构
@@ -136,6 +137,8 @@ MySQL 保存原文、文本块和向量；FAISS 是派生索引。混合检索�
 python -m pytest -q
 python -m scripts.evaluate_collaboration --fixture
 python -m scripts.evaluate_collaboration --fixture --split holdout
+# 仅演示检索指标计算格式；不代表真实召回率
+python -m scripts.evaluate_retrieval --labels evaluations/retrieval/example-labels.jsonl --rankings evaluations/retrieval/example-rankings.jsonl
 # frontend
 npm test
 npm run build
@@ -174,6 +177,7 @@ docker compose exec api python -m scripts.setup_admin
 - [员工注册、审核记录与账号状态](docs/项目文档/03-使用说明/员工注册与岗位审核说明.md)
 - [老人档案与样例导入](docs/项目文档/03-使用说明/老人档案使用说明.md)
 - [完整实现与验收说明](docs/项目文档/03-使用说明/禾龄通六岗位协作完整使用与验收说明.md)
+- [检索指标评测说明](docs/项目文档/04-优化与评测/检索评测使用说明.md)
 - [简历 v16 需求对照与验证记录](docs/项目文档/04-优化与评测/简历v16实现对照与验证记录.md)
 - [项目文档导航](docs/项目文档/README.md)
 

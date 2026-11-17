@@ -146,6 +146,18 @@ def revise(key:str,data:Revision,db:DatabaseSession,actor:Actor,validator:Valida
 @router.post('/drafts/{key}/decision')
 def decide(key:str,data:Decision,db:DatabaseSession,actor:Actor,validator:Validator):return service.serialize(db,actor,service.decision(db,actor,key,data,validator))
 
+@router.get('/drafts/{key}/feedback')
+def draft_feedback(key:str,db:DatabaseSession,actor:Actor):
+    from app.operations.feedback import records
+    return records(db,actor,key)
+
+class FeedbackResolution(Strict):
+    note:str=Field(min_length=1,max_length=1000)
+@router.post('/feedback/{key}/resolve')
+def resolve_feedback(key:str,data:FeedbackResolution,db:DatabaseSession,actor:Actor):
+    from app.operations.feedback import resolve
+    return resolve(db,actor,key,data.note)
+
 @router.get('/executions')
 def executions(db:DatabaseSession,actor:Actor):
     role=identity(db,actor).role
@@ -207,14 +219,20 @@ def dashboard(db:DatabaseSession,actor:Actor):
     stats={}
     for period,days in [('week',7),('month',30)]:
         recent=[r for r in approved if r.created_at>=now-timedelta(days=days)]
-        stats[period]={'approved':len(recent),'unchanged':sum(r.proposed==r.current for r in recent)}
+        period_events=[entry for entry in events if entry.created_at>=now-timedelta(days=days)]
+        approved_ids={entry.object_id for entry in period_events if entry.action=='draft_approved'}
+        recent=[row for row in approved if row.id in approved_ids]
+        corrections=list(db.scalars(select(Correction).where(Correction.created_at>=now-timedelta(days=days))))
+        stats[period]={'approved':len(recent),'unchanged':sum(r.proposed==r.current for r in recent),'overridden':sum(r.proposed!=r.current for r in recent),'feedback':{route:{'total':sum(c.route==route for c in corrections),'open':sum(c.route==route and not c.closed for c in corrections),'closed':sum(c.route==route and c.closed for c in corrections)} for route in ('rule','agent','training')}}
     tool_ok=sum(e.action=='tool_succeeded' for e in events);tool_bad=sum(e.action=='tool_failed' for e in events)
-    return {'tool_success_rate':round(tool_ok/(tool_ok+tool_bad),4) if tool_ok+tool_bad else None,'tool_successes':tool_ok,'tool_failures':tool_bad,'drafts':len(rows),'pending':sum(r.status=='pending' and r.expires_at>now for r in rows),'approved':len(approved),'unchanged_adoption':round(adopted/len(approved),4) if approved else None,'closed_corrections':db.scalar(select(func.count()).select_from(Correction).where(Correction.closed.is_(True))),'open_corrections':db.scalar(select(func.count()).select_from(Correction).where(Correction.closed.is_(False))),'periods':stats,'gateway_denials':sum(e.action.endswith('denied') for e in events),'validation_blocks':sum(e.action=='validation_blocked' for e in events),'notice':'采纳率仅按已批准草稿统计；无样本时未知。没有把演示数据当作生产效果指标。'}
+    native_ok=sum(e.action=='react_tool_succeeded' for e in events);native_bad=sum(e.action=='react_tool_failed' for e in events)
+    native={'successes':native_ok,'failures':native_bad,'rejected':sum(e.action=='react_tool_rejected' for e in events),'success_rate':round(native_ok/(native_ok+native_bad),4) if native_ok+native_bad else None,'denominator':native_ok+native_bad,'definition':'已注册、Schema及权限通过后实际发起的ReAct工具调用；参数与权限拒绝单列，不合并底层只读调用。'}
+    return {'react_tools':native,'tool_success_rate':round(tool_ok/(tool_ok+tool_bad),4) if tool_ok+tool_bad else None,'tool_successes':tool_ok,'tool_failures':tool_bad,'drafts':len(rows),'pending':sum(r.status=='pending' and r.expires_at>now for r in rows),'approved':len(approved),'unchanged_adoption':round(adopted/len(approved),4) if approved else None,'closed_corrections':db.scalar(select(func.count()).select_from(Correction).where(Correction.closed.is_(True))),'open_corrections':db.scalar(select(func.count()).select_from(Correction).where(Correction.closed.is_(False))),'periods':stats,'gateway_denials':sum(e.action.endswith('denied') for e in events),'validation_blocks':sum(e.action=='validation_blocked' for e in events),'notice':'采纳率仅按已批准草稿统计；无样本时未知。没有把演示数据当作生产效果指标。'}
 
 @router.get('/audit')
 def audit(db:DatabaseSession,actor:Admin):
     rows=db.scalars(select(Event).order_by(Event.created_at.desc()).limit(200)).all()
-    return {'items':[{'id':r.id,'action':r.action,'created_at':r.created_at,'object_id':'' if r.action in ('clinical_profile_reviewed','clinical_orders_applied') else r.object_id,'data':{'redacted':True} if r.action in ('clinical_profile_reviewed','clinical_orders_applied') else r.data} for r in rows]}
+    return {'items':[{'id':r.id,'action':r.action,'created_at':r.created_at,'object_id':'' if r.action in ('clinical_profile_reviewed','clinical_orders_applied','draft_revised') else r.object_id,'data':{'redacted':True} if r.action in ('clinical_profile_reviewed','clinical_orders_applied','draft_revised') else r.data} for r in rows]}
 
 class ReferenceInput(Strict):
     drug_id:str=Field(min_length=1,max_length=80)

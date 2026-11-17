@@ -61,10 +61,12 @@ def revision(db,actor,key,data,validator):
     for field in ('resident_id','constraint_token'):
         if payload.get(field)!=row.current.get(field):raise HTTPException(422,'修改不能更换草稿目标，请重新生成')
     private,result=check(db,actor,row.kind,payload,validator)
-    before=row.current
-    row.current=payload;row.validation=result;row.private_context=private;row.source_hash=digest(private);row.professional_signoff=None;row.version+=1
-    db.add(Correction(id=str(uuid4()),draft_id=row.id,actor_id=actor.id,route=data.route,tag=data.tag,reason=data.reason,before=before,after=payload,closed=False))
-    event(db,actor,'draft_revised',row.id,route=data.route,tag=data.tag)
+    before=row.current;previous_validation=row.validation;previous_source_hash=row.source_hash;previous_version=row.version
+    row.current=payload;row.validation=result;row.risk=result['risk'];row.private_context=private;row.source_hash=digest(private);row.professional_signoff=None;row.version+=1
+    row.trace=row.trace+[{'node':'human_revision','version':row.version,'rule_version':result['rule_version'],'risk':result['risk'],'route':data.route,'tag':data.tag}]
+    correction_id=str(uuid4())
+    db.add(Correction(id=correction_id,draft_id=row.id,actor_id=actor.id,route=data.route,tag=data.tag,reason=data.reason,before=before,after=payload,closed=False))
+    event(db,actor,'draft_revised',row.id,route=data.route,tag=data.tag,correction_id=correction_id,previous_version=previous_version,version=row.version,previous_validation=previous_validation,validation=result,previous_source_hash=previous_source_hash,source_hash=row.source_hash)
     db.commit();return row
 
 def lock_sources(db,row,actor):

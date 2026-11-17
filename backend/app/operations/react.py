@@ -3,14 +3,16 @@
 Tools are read-only or stage a local proposal. No model tool signs, approves or executes.
 """
 import json
+from time import perf_counter
 from datetime import date
 from decimal import Decimal
 from typing import TypedDict,Literal
 from pydantic import Field,ValidationError
 from fastapi import HTTPException
+from app.core.exceptions import BusinessError
 from langgraph.graph import StateGraph,START,END
 from app.operations.contracts import Strict,Food,current_date
-from app.operations.security import gate,identity,read_tool,resident
+from app.operations.security import gate,identity,read_tool,resident,event
 from app.operations.state import context,issue_constraints,digest
 from app.operations.budget import remaining
 from app.operations.function_calling import function_call
@@ -131,14 +133,25 @@ def run_react(db,actor,kind,text,validator,llm,*,resident_id=None,fixed=None):
         return {'done':False,'rounds':state['rounds']+1,'messages':state['messages']+[{'role':'assistant','content':None,'tool_calls':[safe]}]}
     def act(state):
         call=state['messages'][-1]['tool_calls'][0];name=call['function'].get('name');errors=state['errors']
+        started=perf_counter();valid_call=False
+        def audit(ok,status=None):
+            event(db,actor,'react_tool_succeeded' if ok else 'react_tool_failed' if valid_call else 'react_tool_rejected',role,role=role,tool=name if name in schema else 'unregistered',status=status,elapsed_ms=round((perf_counter()-started)*1000))
+            db.commit()
         try:
             if name not in schema:raise ValueError('not_registered')
             args=schema[name].model_validate_json(call['function']['arguments']).model_dump(mode='json')
+            gate(db,actor,name);valid_call=True
             output=invoke(name,args)
+            audit(True)
             entry={'node':'react_tool','agent':role,'tool':name,'ok':True}
         except (ValueError,ValidationError,KeyError,TypeError):
+            audit(False,422)
             errors+=1;output={'error':'工具未注册或入参不符合严格Schema'};entry={'node':'react_tool','agent':role,'tool':str(name)[:60],'ok':False}
+        except BusinessError as exc:
+            audit(False,exc.status_code)
+            raise
         except HTTPException as exc:
+            audit(False,exc.status_code)
             if exc.status_code not in (409,422):raise
             errors+=1;output={'error':exc.detail};entry={'node':'react_tool','agent':role,'tool':name,'ok':False}
         if errors>=2:raise HTTPException(502,'ReAct工具修正达到上限，未创建草稿')
